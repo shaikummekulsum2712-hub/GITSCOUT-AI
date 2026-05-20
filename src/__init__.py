@@ -1,0 +1,1 @@
+"""GitScout AI package."""
