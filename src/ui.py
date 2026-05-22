@@ -1,8 +1,14 @@
+
+import hashlib
+import re
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
+
 import streamlit as st
 
 from src.ai_agent import analyze_issue, summarize_repository
 from src.github_client import (
-    extract_repo_full_name,
     fetch_open_issues,
     get_gssoc_filter_options,
     get_repository_metadata,
@@ -12,384 +18,293 @@ from src.github_client import (
 from src.issue_ranker import rank_issues
 
 
-def configure_page():
-    st.set_page_config(page_title="GitScout AI", page_icon="🚀", layout="wide")
+MAX_AI_ISSUES = 1
+DEFAULT_SORT = "Most Good First Issues"
 
+
+# ─────────────────────────────────────────────────────────────
+# PAGE CONFIG + THEME
+# ─────────────────────────────────────────────────────────────
+
+def configure_page() -> None:
+    st.set_page_config(
+        page_title="GitScout AI",
+        page_icon="🧭",
+        layout="wide",
+        initial_sidebar_state="collapsed",
+    )
+
+
+def inject_css() -> None:
+    """
+    CSS only. No custom HTML layout blocks.
+    This avoids the black-code-box bug from Streamlit markdown parsing.
+    """
     st.markdown(
         """
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
 
-html, body, [class*="css"] {
-    font-family: 'Inter', sans-serif;
-}
-
-.stApp {
+html, body,
+[data-testid="stAppViewContainer"],
+[data-testid="stMain"] {
     background:
-        radial-gradient(circle at top left, rgba(124,58,237,0.20), transparent 30%),
-        radial-gradient(circle at top right, rgba(6,182,212,0.12), transparent 28%),
-        #0F1117;
-    color: #E5E7EB;
+        radial-gradient(circle at top left, rgba(37, 99, 235, 0.10), transparent 26%),
+        radial-gradient(circle at top right, rgba(124, 58, 237, 0.10), transparent 25%),
+        #F5F7FB !important;
+    color: #0F172A !important;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
 }
 
-.block-container {
-    padding: 2rem 3rem 3rem 3rem;
-    max-width: 1500px;
+[data-testid="stHeader"],
+[data-testid="stToolbar"],
+[data-testid="stSidebar"],
+#MainMenu,
+footer,
+.stDeployButton {
+    display: none !important;
+    visibility: hidden !important;
 }
 
-section[data-testid="stSidebar"] {
-    background: rgba(17, 24, 39, 0.92);
-    border-right: 1px solid rgba(148, 163, 184, 0.14);
+.main .block-container {
+    padding-top: 1.25rem !important;
+    padding-left: 2.2rem !important;
+    padding-right: 2.2rem !important;
+    max-width: 1360px !important;
 }
 
-section[data-testid="stSidebar"] * {
-    color: #E5E7EB;
+h1, h2, h3, h4, p, span, label, div {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
 }
 
-h1, h2, h3 {
-    letter-spacing: -0.03em;
+h1 {
+    color: #0F172A !important;
+    font-weight: 900 !important;
+    letter-spacing: -0.055em !important;
 }
 
-.hero {
-    padding: 2rem;
-    border-radius: 28px;
-    background: rgba(17, 24, 39, 0.74);
-    border: 1px solid rgba(148, 163, 184, 0.14);
-    box-shadow: 0 24px 80px rgba(0,0,0,0.25);
-    margin-bottom: 1.5rem;
+h2, h3 {
+    color: #0F172A !important;
+    font-weight: 800 !important;
+    letter-spacing: -0.025em !important;
 }
 
-.hero-title {
-    font-size: 3rem;
-    font-weight: 800;
-    color: #F8FAFC;
-    line-height: 1.05;
+[data-testid="stMarkdownContainer"] p {
+    font-size: 15px !important;
+    line-height: 1.65 !important;
+    color: #0F172A !important;
+    font-weight: 500 !important;
 }
 
-.hero-subtitle {
-    color: #94A3B8;
-    font-size: 1.05rem;
-    max-width: 760px;
-    margin-top: 0.8rem;
-    line-height: 1.7;
+[data-testid="stCaptionContainer"] {
+    color: #475569 !important;
+    font-weight: 600 !important;
 }
 
-.top-nav {
-    display: flex;
-    gap: 0.6rem;
-    margin-bottom: 1.3rem;
+/* Streamlit bordered containers as cards */
+[data-testid="stVerticalBlockBorderWrapper"] {
+    border-color: #D6DEE9 !important;
+    border-radius: 24px !important;
+    box-shadow: 0 10px 26px rgba(15, 23, 42, 0.07) !important;
+    background: rgba(255, 255, 255, 0.96) !important;
 }
 
-.stat-card {
-    background: rgba(17, 24, 39, 0.72);
-    border: 1px solid rgba(148, 163, 184, 0.12);
-    border-radius: 20px;
-    padding: 1rem;
-}
-
-.stat-number {
-    font-size: 2rem;
-    font-weight: 800;
-    color: #F8FAFC;
-}
-
-.stat-label {
-    color: #94A3B8;
-    font-size: 0.88rem;
-}
-
-.repo-card, .issue-card, .detail-card {
-    background: rgba(17, 24, 39, 0.78);
-    border: 1px solid rgba(148, 163, 184, 0.14);
-    border-radius: 24px;
-    padding: 1.25rem;
-    box-shadow: 0 16px 50px rgba(0,0,0,0.18);
-    margin-bottom: 1rem;
-}
-
-.repo-card:hover, .issue-card:hover {
-    border-color: rgba(124, 58, 237, 0.5);
-}
-
-.card-title {
-    color: #F8FAFC;
-    font-size: 1.1rem;
-    font-weight: 700;
-    text-decoration: none;
-}
-
-.muted {
-    color: #94A3B8;
-    font-size: 0.9rem;
-}
-
-.pill {
-    display: inline-block;
-    padding: 0.28rem 0.65rem;
-    border-radius: 999px;
-    background: rgba(124, 58, 237, 0.18);
-    color: #DDD6FE;
-    font-size: 0.75rem;
-    font-weight: 600;
-    margin: 0.15rem 0.15rem 0.15rem 0;
-}
-
-.green-pill {
-    background: rgba(34,197,94,0.16);
-    color: #86EFAC;
-}
-
-.cyan-pill {
-    background: rgba(6,182,212,0.16);
-    color: #67E8F9;
-}
-
-.score {
-    display: inline-block;
-    padding: 0.38rem 0.8rem;
-    border-radius: 999px;
-    background: linear-gradient(90deg, #7C3AED, #06B6D4);
-    color: white;
-    font-weight: 800;
-    font-size: 0.82rem;
-}
-
+/* Buttons */
 .stButton > button {
-    border-radius: 14px;
-    border: 1px solid rgba(148,163,184,0.16);
-    background: linear-gradient(90deg, #7C3AED, #06B6D4);
-    color: white;
-    font-weight: 700;
-    min-height: 2.75rem;
+    border-radius: 13px !important;
+    font-weight: 800 !important;
+    font-family: 'Inter', sans-serif !important;
+    min-height: 2.65rem !important;
+    transition: all 0.15s ease !important;
 }
 
-.stButton > button:hover {
-    border-color: rgba(255,255,255,0.35);
-    filter: brightness(1.08);
+.stButton > button[kind="primary"],
+.stButton > button[data-testid="baseButton-primary"] {
+    background: linear-gradient(135deg, #2563EB, #7C3AED) !important;
+    border: 1.5px solid #2563EB !important;
+    color: #FFFFFF !important;
+    box-shadow: 0 6px 16px rgba(37, 99, 235, 0.25) !important;
 }
 
+.stButton > button[kind="primary"]:hover,
+.stButton > button[data-testid="baseButton-primary"]:hover {
+    filter: brightness(0.97) !important;
+    transform: translateY(-1px) !important;
+}
+
+.stButton > button[kind="secondary"],
+.stButton > button[data-testid="baseButton-secondary"] {
+    background: #FFFFFF !important;
+    border: 1.5px solid #D6DEE9 !important;
+    color: #2563EB !important;
+    box-shadow: 0 1px 4px rgba(15,23,42,0.05) !important;
+}
+
+.stButton > button[kind="secondary"]:hover,
+.stButton > button[data-testid="baseButton-secondary"]:hover {
+    background: #EFF6FF !important;
+    border-color: #93C5FD !important;
+}
+
+/* Link buttons */
+[data-testid="stLinkButton"] a {
+    border-radius: 13px !important;
+    font-weight: 800 !important;
+    border: 1.5px solid #D6DEE9 !important;
+    color: #2563EB !important;
+    background: #FFFFFF !important;
+}
+
+/* Inputs */
 .stTextInput input,
-.stSelectbox div[data-baseweb="select"],
-.stMultiSelect div[data-baseweb="select"],
-.stNumberInput input {
-    background: #0B1020 !important;
+.stNumberInput input,
+.stSelectbox div[data-baseweb="select"] > div,
+.stMultiSelect div[data-baseweb="select"] > div {
+    background: #FFFFFF !important;
+    color: #0F172A !important;
+    border-color: #D6DEE9 !important;
     border-radius: 14px !important;
-    border: 1px solid rgba(148,163,184,0.18) !important;
-    color: #E5E7EB !important;
+    font-size: 14px !important;
+    min-height: 2.75rem !important;
 }
 
-hr {
-    border-color: rgba(148,163,184,0.15);
+.stTextInput input::placeholder {
+    color: #64748B !important;
 }
 
-.empty-box {
-    border: 1px dashed rgba(148,163,184,0.22);
-    border-radius: 22px;
-    padding: 2rem;
-    text-align: center;
-    color: #94A3B8;
-    background: rgba(17, 24, 39, 0.45);
+[data-testid="stMetricValue"] {
+    color: #0F172A !important;
+    font-size: 1.15rem !important;
+    font-weight: 900 !important;
 }
 
-.topbar{
-    display:flex;
-    justify-content:space-between;
-    align-items:center;
-    margin-bottom:2rem;
-    padding-bottom:1rem;
-    border-bottom:1px solid rgba(255,255,255,0.06);
+[data-testid="stMetricLabel"] {
+    color: #475569 !important;
+    font-weight: 700 !important;
 }
 
-.brand{
-    display:flex;
-    align-items:center;
-    gap:0.7rem;
+div[data-testid="stVerticalBlock"] {
+    gap: 0.75rem;
 }
 
-.brand-logo{
-    color:#8b5cf6;
-    font-size:1.4rem;
+/* Make brand button look more like product identity */
+button[kind="secondary"]:has(div p) {
+    text-align: left !important;
 }
-
-.brand-text{
-    font-size:1.05rem;
-    font-weight:700;
-    color:white;
-}
-
-.nav-links{
-    display:flex;
-    gap:2rem;
-}
-
-.nav-links a{
-    text-decoration:none;
-    color:#94a3b8;
-    font-size:0.95rem;
-    font-weight:500;
-}
-
-.nav-links a:hover{
-    color:white;
-}
-
-.mini-hero{
-    margin-bottom:2rem;
-}
-
-.mini-title{
-    font-size:2rem;
-    font-weight:800;
-    color:white;
-    letter-spacing:-0.04em;
-}
-
-.mini-sub{
-    margin-top:0.4rem;
-    color:#94a3b8;
-    font-size:0.95rem;
-}
-
-.repo-card-new{
-    background:#111827;
-    border:1px solid rgba(255,255,255,0.06);
-    border-radius:20px;
-    padding:1.1rem;
-    margin-bottom:1rem;
-    min-height:260px;
-}
-
-.repo-top{
-    display:flex;
-    gap:1rem;
-    align-items:center;
-    margin-bottom:1rem;
-}
-
-.repo-avatar{
-    width:42px;
-    height:42px;
-    border-radius:12px;
-    background:#1f2937;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    font-weight:700;
-}
-
-.repo-name{
-    font-weight:700;
-    color:white;
-    font-size:1rem;
-}
-
-.repo-meta{
-    font-size:0.82rem;
-    color:#94a3b8;
-    margin-top:0.15rem;
-}
-
-.repo-summary{
-    color:#d1d5db;
-    line-height:1.6;
-    font-size:0.92rem;
-    margin-bottom:1rem;
-}
-
-.repo-tags{
-    display:flex;
-    flex-wrap:wrap;
-    gap:0.45rem;
-}
-
-.tag{
-    background:#1e293b;
-    color:#cbd5e1;
-    padding:0.28rem 0.65rem;
-    border-radius:999px;
-    font-size:0.74rem;
-}
-
-.issue-modern{
-    background:#111827;
-    border-radius:22px;
-    padding:1.3rem;
-    border:1px solid rgba(255,255,255,0.06);
-    margin-bottom:1rem;
-}
-
-.issue-header{
-    display:flex;
-    justify-content:space-between;
-    gap:1rem;
-}
-
-.issue-title a{
-    color:white;
-    font-size:1rem;
-    font-weight:700;
-    text-decoration:none;
-}
-
-.issue-summary{
-    color:#cbd5e1;
-    margin-top:0.6rem;
-    line-height:1.6;
-}
-
-.issue-chips{
-    display:flex;
-    gap:0.5rem;
-    flex-wrap:wrap;
-    margin-top:1rem;
-}
-
-.issue-chips span{
-    background:#1e293b;
-    padding:0.3rem 0.65rem;
-    border-radius:999px;
-    font-size:0.74rem;
-    color:#cbd5e1;
-}
-
-.score-ring{
-    min-width:72px;
-    height:72px;
-    border-radius:999px;
-    border:5px solid;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    font-weight:800;
-    color:white;
-    font-size:1.1rem;
-}
-
 </style>
 """,
         unsafe_allow_html=True,
     )
 
 
-def init_session():
+# ─────────────────────────────────────────────────────────────
+# CACHE WRAPPERS
+# ─────────────────────────────────────────────────────────────
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def cached_filter_options() -> Dict[str, List[str]]:
+    try:
+        data = get_gssoc_filter_options()
+        if not isinstance(data, dict):
+            return {"tech_stacks": [], "languages": [], "difficulties": []}
+
+        return {
+            "tech_stacks": unique_clean(data.get("tech_stacks") or data.get("tech_stack") or data.get("stacks") or []),
+            "languages": unique_clean(data.get("languages") or data.get("language") or []),
+            "difficulties": unique_clean(data.get("difficulties") or data.get("difficulty") or []),
+        }
+    except Exception:
+        return {"tech_stacks": [], "languages": [], "difficulties": []}
+
+
+@st.cache_data(ttl=900, show_spinner=False)
+def cached_search_projects(
+    keywords: str,
+    tech_stack: str,
+    language: str,
+    difficulty: str,
+    sort_by: str,
+) -> List[Dict[str, Any]]:
+    results = search_gssoc_projects(
+        keywords=keywords or "",
+        tech_stack=tech_stack or "",
+        language=language or "",
+        difficulty=difficulty or "",
+        sort_by=sort_by or DEFAULT_SORT,
+    )
+    return results if isinstance(results, list) else []
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def cached_repo_metadata(full_name: str) -> Dict[str, Any]:
+    return get_repository_metadata(full_name)
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def cached_repo_readme(full_name: str) -> str:
+    return get_repository_readme(full_name)
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def cached_open_issues(full_name: str) -> List[Dict[str, Any]]:
+    issues = fetch_open_issues(full_name)
+    return issues if isinstance(issues, list) else []
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def cached_repo_summary(repo_data: Dict[str, Any]) -> Dict[str, Any]:
+    return summarize_repository(repo_data)
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def cached_issue_analysis(issue_data: Dict[str, Any], skill_level: str) -> Dict[str, Any]:
+    return analyze_issue(issue_data, skill_level)
+
+
+# ─────────────────────────────────────────────────────────────
+# SESSION
+# ─────────────────────────────────────────────────────────────
+
+def init_session_state() -> None:
     defaults = {
         "page": "discover",
+
         "repo_results": [],
         "selected_repos": [],
-        "ranked_issues": [],
-        "saved_issues": [],
         "active_repo": None,
+        "active_repo_detail": None,
+
+        "ranked_issues": [],
+        "selected_issue_idx": 0,
+        "issue_ai_breakdowns": {},
+        "saved_issues": [],
+
         "keywords": "",
+        "hero_keywords": "",
+        "repo_filter_keywords": "",
+
         "tech_stack": "",
-        "language": "",
+        "language": "Python",
         "difficulty": "",
-        "sort_by": "Most Open Issues",
+        "sort_by": DEFAULT_SORT,
         "skill_level": "Beginner",
-        "issue_keywords": "",
-        "custom_labels": "",
+
+        "repo_filters_open": False,
+        "issue_filters_open": False,
+
+        "user_skills": ["Python basics"],
+        "ml_interests": ["AI/ML"],
+        "contribution_types": ["Docs", "Bug"],
+
         "issue_labels": ["good first issue", "help wanted"],
+        "custom_labels": "",
         "assignee_filter": "Only unassigned",
         "max_comments": 5,
+        "issue_keywords": "",
+        "issue_type": "Any",
+        "ml_area": "Any",
+        "required_knowledge": "Any",
+        "issue_sort": "Best match",
     }
 
     for key, value in defaults.items():
@@ -397,292 +312,331 @@ def init_session():
             st.session_state[key] = value
 
 
-def nav_button(label, page):
-    if st.button(label, key=f"nav_{page}"):
-        st.session_state.page = page
-        st.rerun()
-
-def render_top_nav():
-    st.markdown(
-        """
-        <div class="topbar">
-            <div class="brand">
-                <span class="brand-logo">●</span>
-                <span class="brand-text">GitScout AI</span>
-            </div>
-
-            <div class="nav-links">
-                <a href="?page=discover" target="_self">Discover</a>
-                <a href="?page=shortlist" target="_self">Shortlist</a>
-                <a href="?page=issues" target="_self">Issues</a>
-                <a href="?page=saved" target="_self">Saved</a>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    query_params = st.query_params
-
-    if "page" in query_params:
-        st.session_state.page = query_params["page"]
+def go(page: str) -> None:
+    st.session_state.page = page
+    st.rerun()
 
 
-def render_sidebar():
-    if st.session_state.page != "discover":
-        return
+# ─────────────────────────────────────────────────────────────
+# GENERAL HELPERS
+# ─────────────────────────────────────────────────────────────
 
-    filters = get_gssoc_filter_options()
+def unique_clean(value: Any) -> List[str]:
+    if value is None:
+        return []
 
-    with st.sidebar:
-        st.markdown("## Discover")
+    if isinstance(value, str):
+        items = [part.strip() for part in value.split(",")]
+    elif isinstance(value, (list, tuple, set)):
+        items = [str(item).strip() for item in value]
+    else:
+        items = [str(value).strip()]
 
-        st.text_input(
-            "Search repositories",
-            key="keywords",
-            placeholder="AI, backend, ML, docs..."
-        )
+    cleaned: List[str] = []
+    seen = set()
 
-        st.selectbox(
-            "Tech Stack",
-            [""] + filters["tech_stacks"],
-            key="tech_stack"
-        )
+    for item in items:
+        if not item:
+            continue
+        key = item.lower()
+        if key not in seen:
+            cleaned.append(item)
+            seen.add(key)
 
-        st.selectbox(
-            "Language",
-            [""] + filters["languages"],
-            key="language"
-        )
-
-        st.selectbox(
-            "Difficulty",
-            [""] + filters["difficulties"],
-            key="difficulty"
-        )
-
-        st.selectbox(
-            "Sort",
-            [
-                "Most Open Issues",
-                "Most Good First Issues",
-                "Beginner Friendly First",
-                "Name A-Z"
-            ],
-            key="sort_by"
-        )
-
-        st.selectbox(
-            "Your Skill Level",
-            ["Beginner", "Intermediate", "Advanced"],
-            key="skill_level"
-        )
-
-        st.markdown("")
-
-        if st.button("Search Projects", use_container_width=True):
-            search_projects()
+    return cleaned
 
 
+def safe_key(value: Any) -> str:
+    return hashlib.md5(str(value).encode("utf-8", errors="ignore")).hexdigest()[:10]
 
-def is_selected(repo):
-    full_name = extract_repo_full_name(repo.get("repo_url") or repo.get("url"))
-    return any(
-        extract_repo_full_name(r.get("repo_url") or r.get("url")) == full_name
-        for r in st.session_state.selected_repos
+
+def strip_markdown(text: Any) -> str:
+    raw = str(text or "")
+    raw = re.sub(r"```.*?```", " ", raw, flags=re.DOTALL)
+    raw = re.sub(r"`([^`]*)`", r"\1", raw)
+    raw = re.sub(r"!\[[^\]]*\]\([^)]+\)", " ", raw)
+    raw = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", raw)
+    raw = re.sub(r"^\s{0,3}#{1,6}\s*", "", raw, flags=re.MULTILINE)
+    raw = re.sub(r"[*_>#\-]+", " ", raw)
+    raw = re.sub(r"\s+", " ", raw).strip()
+    return raw
+
+
+def truncate(text: Optional[Any], length: int = 155) -> str:
+    clean = strip_markdown(text)
+    if not clean:
+        return "No description available."
+    return clean if len(clean) <= length else clean[: length - 3] + "..."
+
+
+def extract_repo_full_name(url: str) -> str:
+    if not url:
+        return ""
+
+    try:
+        parsed = urlparse(url)
+        parts = [part for part in parsed.path.strip("/").split("/") if part]
+
+        if len(parts) >= 2:
+            return f"{parts[0]}/{parts[1]}"
+    except Exception:
+        return ""
+
+    return ""
+
+
+def repo_url(repo: Dict[str, Any]) -> str:
+    return (
+        repo.get("repo_url")
+        or repo.get("github_url")
+        or repo.get("html_url")
+        or repo.get("url")
+        or "#"
     )
 
 
-def select_repo(repo):
-    if not is_selected(repo):
-        st.session_state.selected_repos.append(repo)
-        st.toast("Added to shortlist ✅")
+def repo_full_name(repo: Dict[str, Any]) -> str:
+    explicit = repo.get("repo_full_name") or repo.get("full_name")
+
+    if explicit:
+        return str(explicit)
+
+    url_full_name = extract_repo_full_name(repo_url(repo))
+    if url_full_name:
+        return url_full_name
+
+    name = repo.get("name")
+    if isinstance(name, str) and "/" in name:
+        return name
+
+    return str(name or "")
 
 
-def search_projects():
-    with st.spinner("Scouting matching repositories..."):
-        projects = search_gssoc_projects(
-            keywords=st.session_state.keywords,
-            tech_stack=st.session_state.tech_stack,
-            language=st.session_state.language,
-            difficulty=st.session_state.difficulty,
-            sort_by=st.session_state.sort_by,
-        )
-
-        final = []
-
-        for repo in projects:
-            try:
-                full_name = extract_repo_full_name(repo.get("repo_url") or repo.get("url"))
-                metadata = get_repository_metadata(full_name)
-
-                repo["stars"] = metadata.get("stars", 0)
-                repo["open_issues"] = metadata.get("open_issues_count", 0)
-
-                if not repo.get("language"):
-                    repo["language"] = metadata.get("language", "")
-
-                repo["readme"] = get_repository_readme(full_name)
-
-                try:
-                    repo["summary"] = summarize_repository(repo).get("summary", "")
-                except Exception:
-                    repo["summary"] = repo.get("description", "")
-            except Exception:
-                repo["summary"] = repo.get("description", "")
-
-            final.append(repo)
-
-        st.session_state.repo_results = final
-        st.session_state.page = "discover"
-
-def render_hero():
-    st.markdown(
-        f"""
-        <div class="mini-hero">
-            <div class="mini-title">
-                Discover low-competition open-source opportunities
-            </div>
-
-            <div class="mini-sub">
-                {len(st.session_state.repo_results)} projects ·
-                {len(st.session_state.selected_repos)} shortlisted ·
-                {len(st.session_state.ranked_issues)} ranked issues
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-def render_repo_card(repo):
-    url = repo.get("url") or repo.get("repo_url") or "#"
-    name = repo.get("name", "Unknown Repo")
-    summary = repo.get("summary") or repo.get("description") or ""
-
-    short_summary = summary[:140] + "..." if len(summary) > 140 else summary
-
-    st.markdown(
-        f"""
-        <div class="repo-card-new">
-
-            <div class="repo-top">
-                <div class="repo-avatar">
-                    {name[:1].upper()}
-                </div>
-
-                <div>
-                    <div class="repo-name">{name}</div>
-                    <div class="repo-meta">
-                        ⭐ {repo.get("stars", 0)} ·
-                        {repo.get("language", "Unknown")} ·
-                        {repo.get("open_issues", 0)} issues
-                    </div>
-                </div>
-            </div>
-
-            <div class="repo-summary">
-                {short_summary}
-            </div>
-
-            <div class="repo-tags">
-                {"".join([f'<span class="tag">{x}</span>' for x in repo.get("tech_stack", [])[:4]])}
-            </div>
-
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    c1, c2 = st.columns([1, 1])
-
-    with c1:
-        st.link_button("Open Repo", url, use_container_width=True)
-
-    with c2:
-        if is_selected(repo):
-            st.button(
-                "Saved ✓",
-                disabled=True,
-                key=f"saved_{name}"
-            )
-        else:
-            if st.button(
-                "Shortlist",
-                key=f"repo_{name}",
-                use_container_width=True
-            ):
-                select_repo(repo)
-                st.rerun()
+def get_repo_display_name(repo: Dict[str, Any]) -> str:
+    return repo_full_name(repo) or str(repo.get("name") or "Unknown repository")
 
 
-
-def render_discover():
-    render_hero()
-
-    st.markdown("## Recommended Projects")
-    st.caption("Search results are shown as scannable cards so you can compare quickly.")
-
-    if not st.session_state.repo_results:
-        st.markdown(
-            """
-<div class="empty-box">
-    <h3>Your scout feed is empty</h3>
-    <p>Use the filters on the left and click <b>Search Projects</b> to discover repos.</p>
-</div>
-""",
-            unsafe_allow_html=True,
-        )
-        return
-
-    cols = st.columns(3, gap="large")
-    for i, repo in enumerate(st.session_state.repo_results):
-        with cols[i % 3]:
-            render_repo_card(repo)
-
-    if st.session_state.selected_repos:
-        st.markdown("---")
-        if st.button("Continue to Shortlist →"):
-            st.session_state.page = "shortlist"
-            st.rerun()
+def get_repo_tags(repo: Dict[str, Any]) -> List[str]:
+    return unique_clean(repo.get("tech_stack") or repo.get("topics") or repo.get("tags"))[:7]
 
 
-def render_shortlist():
-    st.markdown("## Your Contribution Queue")
-    st.caption("Pick one shortlisted repository to analyze issues.")
-
-    if not st.session_state.selected_repos:
-        st.markdown('<div class="empty-box">No repos shortlisted yet.</div>', unsafe_allow_html=True)
-        return
-
-    cols = st.columns(2, gap="large")
-
-    for i, repo in enumerate(st.session_state.selected_repos):
-        with cols[i % 2]:
-            st.markdown('<div class="repo-card">', unsafe_allow_html=True)
-            st.markdown(f"### {repo.get('name')}")
-            st.write(repo.get("summary", repo.get("description", "")))
-            st.markdown(
-                f'<div class="muted">⭐ {repo.get("stars", 0)} · 📋 {repo.get("open_issues", 0)} issues</div>',
-                unsafe_allow_html=True,
-            )
-
-            if st.button("Analyze Issues", key=f"analyze_{repo.get('name')}"):
-                st.session_state.active_repo = repo
-                st.session_state.ranked_issues = []
-                st.session_state.page = "issues"
-                st.rerun()
-
-            st.markdown("</div>", unsafe_allow_html=True)
+def searchable_repo_text(repo: Dict[str, Any]) -> str:
+    parts = [
+        repo.get("name", ""),
+        repo_full_name(repo),
+        repo.get("description", ""),
+        repo.get("summary", ""),
+        " ".join(get_repo_tags(repo)),
+        repo.get("language", ""),
+    ]
+    return " ".join(str(part) for part in parts).lower()
 
 
-def issue_matches(issue):
-    labels = [label.lower() for label in issue.get("labels", [])]
+def infer_best_for(repo: Dict[str, Any]) -> str:
+    text = searchable_repo_text(repo)
 
-    selected = [x.lower() for x in st.session_state.issue_labels]
-    custom = [x.strip().lower() for x in st.session_state.custom_labels.split(",") if x.strip()]
-    all_labels = selected + custom
+    if any(word in text for word in ["nlp", "language model", "transformer", "huggingface", "tokenizer", "llm"]):
+        return "NLP / LLMs"
+    if any(word in text for word in ["vision", "image", "opencv", "ocr", "segmentation", "detection"]):
+        return "Computer Vision"
+    if any(word in text for word in ["pandas", "numpy", "preprocess", "data clean", "dataset"]):
+        return "Data preprocessing"
+    if any(word in text for word in ["sklearn", "scikit", "classification", "regression", "clustering"]):
+        return "Classical ML"
+    if any(word in text for word in ["pytorch", "tensorflow", "keras", "deep learning", "neural"]):
+        return "Deep Learning"
+    if any(word in text for word in ["doc", "readme", "tutorial", "example"]):
+        return "Docs / Examples"
+    if "python" in text:
+        return "Python beginners"
+    return "AI/ML beginners"
 
-    if all_labels and not any(label in labels for label in all_labels):
+
+def infer_required_skills(repo: Dict[str, Any]) -> List[str]:
+    text = searchable_repo_text(repo)
+    skills = []
+
+    if "python" in text or repo.get("language") == "Python":
+        skills.append("Python")
+    if "numpy" in text:
+        skills.append("NumPy")
+    if "pandas" in text:
+        skills.append("Pandas")
+    if "sklearn" in text or "scikit" in text:
+        skills.append("Scikit-learn")
+    if "pytorch" in text:
+        skills.append("PyTorch")
+    if "tensorflow" in text or "keras" in text:
+        skills.append("TensorFlow")
+    if any(word in text for word in ["doc", "readme", "tutorial"]):
+        skills.append("Docs")
+
+    return skills[:4] or ["Python", "GitHub basics"]
+
+
+def infer_contribution_fit(repo: Dict[str, Any]) -> str:
+    text = searchable_repo_text(repo)
+    difficulty = str(repo.get("difficulty", "")).lower()
+    good_first = int(repo.get("good_first_issues", 0) or 0)
+
+    if good_first > 0 or "beginner" in difficulty or "good first issue" in text:
+        return "Beginner friendly"
+
+    if any(word in text for word in ["pytorch", "tensorflow", "deep learning", "cuda", "compiler"]):
+        return "Needs ML basics"
+
+    return "Beginner possible"
+
+
+def infer_available_work(repo: Dict[str, Any]) -> List[str]:
+    text = searchable_repo_text(repo)
+    work = []
+
+    if any(word in text for word in ["doc", "readme", "tutorial", "example"]):
+        work.append("Docs")
+    if any(word in text for word in ["bug", "fix", "issue"]):
+        work.append("Bugs")
+    if any(word in text for word in ["test", "pytest", "unittest"]):
+        work.append("Tests")
+    if any(word in text for word in ["example", "notebook", "demo"]):
+        work.append("Examples")
+    if any(word in text for word in ["api", "backend", "fastapi"]):
+        work.append("API")
+    if any(word in text for word in ["preprocess", "dataset", "data"]):
+        work.append("Data")
+
+    return work[:4] or ["Docs", "Bugs", "Examples"]
+
+
+def github_stat(value: Any) -> str:
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return "—"
+
+    return str(number) if number > 0 else "—"
+
+
+def dynamic_repo_reasons(repo: Dict[str, Any]) -> List[str]:
+    tags = get_repo_tags(repo)
+    language = str(repo.get("language") or "").lower()
+    skills = infer_required_skills(repo)
+    fit = infer_contribution_fit(repo)
+    open_issues = repo.get("open_issues") or repo.get("open_issues_count") or 0
+
+    reasons = []
+
+    if "Python" in skills or language == "python":
+        reasons.append("Uses Python, which matches the AI/ML beginner path.")
+
+    if fit == "Beginner friendly":
+        reasons.append("Looks beginner-friendly based on labels, tags, or difficulty.")
+
+    if open_issues and int(open_issues) > 0:
+        reasons.append(f"Has {open_issues} open issues to explore.")
+
+    if tags:
+        reasons.append(f"Project area: {infer_best_for(repo)}.")
+
+    if not reasons:
+        reasons.append("Good candidate for checking beginner-friendly contribution opportunities.")
+
+    reasons.append("GitScout ranks issues quickly first, then uses AI only for the selected issue.")
+
+    return reasons[:4]
+
+def is_selected_repo(repo: Dict[str, Any]) -> bool:
+    """Return True if this repository is already in the current shortlist."""
+    full_name = repo_full_name(repo)
+    if not full_name:
+        return False
+
+    return any(repo_full_name(item) == full_name for item in st.session_state.selected_repos)
+
+
+def add_repo_to_shortlist(repo: Dict[str, Any]) -> None:
+    """Add a repository to the session shortlist without duplicates."""
+    if not is_selected_repo(repo):
+        st.session_state.selected_repos.append(dict(repo))
+
+
+
+
+def issue_text(issue: Dict[str, Any]) -> str:
+    return " ".join(
+        [
+            str(issue.get("title", "")),
+            str(issue.get("body", "")),
+            " ".join(unique_clean(issue.get("labels", []))),
+        ]
+    ).lower()
+
+
+def infer_issue_type(issue: Dict[str, Any]) -> str:
+    text = issue_text(issue)
+
+    if any(word in text for word in ["doc", "readme", "documentation", "typo"]):
+        return "Docs"
+    if any(word in text for word in ["notebook", "example", "tutorial", "demo"]):
+        return "Example notebook"
+    if any(word in text for word in ["preprocess", "dataset", "data cleaning", "data pipeline"]):
+        return "Data preprocessing"
+    if any(word in text for word in ["train", "training", "model", "loss", "epoch"]):
+        return "Model training"
+    if any(word in text for word in ["metric", "accuracy", "evaluation", "benchmark"]):
+        return "Evaluation"
+    if any(word in text for word in ["api", "endpoint", "backend", "server"]):
+        return "API/backend"
+    if any(word in text for word in ["test", "pytest", "unit test"]):
+        return "Testing"
+    if any(word in text for word in ["bug", "fix", "error", "crash"]):
+        return "Bug"
+    return "General"
+
+
+def infer_ml_area(issue: Dict[str, Any]) -> str:
+    text = issue_text(issue)
+
+    if any(word in text for word in ["nlp", "tokenizer", "transformer", "llm", "language model"]):
+        return "NLP"
+    if any(word in text for word in ["vision", "image", "opencv", "ocr", "segmentation", "detection"]):
+        return "Computer Vision"
+    if any(word in text for word in ["sklearn", "classification", "regression", "clustering"]):
+        return "Classical ML"
+    if any(word in text for word in ["pytorch", "tensorflow", "keras", "neural", "deep learning"]):
+        return "Deep Learning"
+    if any(word in text for word in ["data", "dataset", "preprocess", "cleaning"]):
+        return "Data cleaning"
+    if any(word in text for word in ["docker", "deploy", "pipeline", "mlops", "workflow"]):
+        return "MLOps"
+    return "General"
+
+
+def infer_required_knowledge(issue: Dict[str, Any]) -> str:
+    text = issue_text(issue)
+
+    if "pytorch" in text:
+        return "PyTorch"
+    if "tensorflow" in text or "keras" in text:
+        return "TensorFlow"
+    if "sklearn" in text or "scikit" in text:
+        return "Scikit-learn"
+    if "numpy" in text or "pandas" in text:
+        return "NumPy/Pandas"
+    return "Python only"
+
+
+def issue_matches_filters(issue: Dict[str, Any]) -> bool:
+    labels = [label.lower() for label in unique_clean(issue.get("labels", []))]
+    selected_labels = [label.lower() for label in st.session_state.issue_labels]
+    custom_labels = [
+        label.strip().lower()
+        for label in st.session_state.custom_labels.split(",")
+        if label.strip()
+    ]
+
+    required_labels = selected_labels + custom_labels
+    if required_labels and not any(label in labels for label in required_labels):
         return False
 
     if st.session_state.assignee_filter == "Only unassigned" and issue.get("assignee"):
@@ -691,203 +645,974 @@ def issue_matches(issue):
     if st.session_state.assignee_filter == "Assigned only" and not issue.get("assignee"):
         return False
 
-    if issue.get("comments", 0) > st.session_state.max_comments:
+    if int(issue.get("comments", 0) or 0) > int(st.session_state.max_comments):
         return False
 
-    keyword = st.session_state.issue_keywords.lower().strip()
-    if keyword:
-        text = f"{issue.get('title', '')} {issue.get('body', '')}".lower()
-        if keyword not in text and not any(keyword in label for label in labels):
-            return False
+    if st.session_state.issue_type != "Any" and infer_issue_type(issue) != st.session_state.issue_type:
+        return False
+
+    if st.session_state.ml_area != "Any" and infer_ml_area(issue) != st.session_state.ml_area:
+        return False
+
+    if st.session_state.required_knowledge != "Any" and infer_required_knowledge(issue) != st.session_state.required_knowledge:
+        return False
+
+    keyword = st.session_state.issue_keywords.strip().lower()
+    if keyword and keyword not in issue_text(issue):
+        return False
 
     return True
 
 
-def find_and_rank_issues():
-    repo = st.session_state.active_repo
-    if not repo:
-        st.warning("Select a repo first.")
-        return
+def local_issue_score(issue: Dict[str, Any]) -> float:
+    score = 0.0
+    labels = [label.lower() for label in unique_clean(issue.get("labels", []))]
+    comments = int(issue.get("comments", 0) or 0)
+    issue_type = infer_issue_type(issue)
+    ml_area = infer_ml_area(issue)
+    required = infer_required_knowledge(issue)
 
-    full_name = extract_repo_full_name(repo.get("repo_url") or repo.get("url"))
+    if not issue.get("assignee"):
+        score += 18
+    if "good first issue" in labels:
+        score += 22
+    if "help wanted" in labels:
+        score += 14
 
-    with st.spinner("Analyzing issues with AI..."):
-        raw_issues = fetch_open_issues(full_name)
-        final = []
+    if comments == 0:
+        score += 16
+    elif comments <= 2:
+        score += 12
+    elif comments <= 5:
+        score += 8
 
-        for issue in raw_issues:
-            if not issue_matches(issue):
-                continue
+    if issue_type in st.session_state.contribution_types:
+        score += 10
 
-            try:
-                ai = analyze_issue(issue, st.session_state.skill_level)
-                issue.update(ai)
-            except Exception:
-                issue["summary"] = issue.get("body", "")[:180] or "No summary available."
-                issue["difficulty"] = "Intermediate"
-                issue["competition"] = min(10, issue.get("comments", 0) + 1)
-                issue["skill_match"] = 7
-                issue["what_to_do"] = "Review the issue and inspect the related files."
-                issue["why_good_match"] = "This looks suitable based on labels and low activity."
-                issue["files_likely_needed"] = "Not clear from issue."
-                issue["estimated_time"] = "Not sure"
+    if ml_area in st.session_state.ml_interests or st.session_state.ml_area == ml_area:
+        score += 10
 
-            issue["repo_name"] = repo.get("name")
-            final.append(issue)
+    if required in st.session_state.user_skills or required == "Python only":
+        score += 10
 
-        st.session_state.ranked_issues = rank_issues(final, {"skill_level": st.session_state.skill_level})
+    created_at = issue.get("created_at")
+    if created_at:
+        try:
+            created = datetime.fromisoformat(str(created_at).replace("Z", "+00:00"))
+            age_days = (datetime.now(timezone.utc) - created).days
+            if age_days <= 30:
+                score += 4
+        except ValueError:
+            pass
 
-
-def render_issue_filters():
-    st.markdown('<div class="detail-card">', unsafe_allow_html=True)
-    st.markdown("### Filter Issues")
-
-    st.multiselect(
-        "Popular labels",
-        ["good first issue", "help wanted", "bug", "documentation", "enhancement"],
-        key="issue_labels",
-    )
-
-    st.text_input("Custom labels", key="custom_labels", placeholder="frontend, backend, auth...")
-    st.selectbox("Assignee", ["Only unassigned", "Any", "Assigned only"], key="assignee_filter")
-    st.number_input("Max comments", min_value=0, max_value=50, value=5, key="max_comments")
-    st.text_input("Keyword", key="issue_keywords", placeholder="api, docs, login...")
-
-    if st.button("Find Best Issues"):
-        find_and_rank_issues()
-
-    st.markdown("</div>", unsafe_allow_html=True)
+    return min(score, 100)
 
 
-def contribution_comment(issue):
-    title = issue.get("title", "this issue")
-    first_step = issue.get("first_step") or "I’ll first review the related files and understand the expected change."
-
-    return f"""Hi! I’d like to work on this issue.
-
-I have reviewed the issue: "{title}".
-
-My first step will be: {first_step}
-
-Please assign this to me if it is still available. Thank you!"""
-
-def render_issue_card(issue):
-    scout_score = issue.get("scout_score", 0)
-
-    score_color = "#22c55e"
-
-    if scout_score < 80:
-        score_color = "#f59e0b"
-
-    if scout_score < 50:
-        score_color = "#ef4444"
-
-    st.markdown(
-        f"""
-        <div class="issue-modern">
-
-            <div class="issue-header">
-
-                <div class="issue-main">
-                    <div class="issue-title">
-                        <a href="{issue.get("url")}" target="_blank">
-                            {issue.get("title")}
-                        </a>
-                    </div>
-
-                    <div class="issue-summary">
-                        {issue.get("summary", "")}
-                    </div>
-
-                    <div class="issue-chips">
-                        <span>{issue.get("difficulty")}</span>
-                        <span>{issue.get("competition_level")}</span>
-                        <span>{issue.get("comments", 0)} comments</span>
-                        <span>{issue.get("skill_match", 0)}/10 skill fit</span>
-                    </div>
-                </div>
-
-                <div class="score-ring" style="border-color:{score_color}">
-                    {scout_score}
-                </div>
-
-            </div>
-
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    st.markdown("#### AI Breakdown")
-
-    st.markdown(
-        f"""
-- **What you'll do:** {issue.get("what_to_do", "")}
-
-- **Why it matches:** {issue.get("why_good_match", "")}
-
-- **Likely files:** {issue.get("files_likely_needed", "")}
-
-- **Estimated time:** {issue.get("estimated_time", "")}
-
-- **First step:** {issue.get("first_step", "")}
-"""
-    )
-
-    st.code(
-        contribution_comment(issue),
-        language="markdown"
-    )
+def score_badge(score: int) -> str:
+    if score >= 80:
+        return f"🟢 {score}"
+    if score >= 55:
+        return f"🟠 {score}"
+    return f"🔴 {score}"
 
 
+def issue_key(issue: Dict[str, Any]) -> str:
+    return str(issue.get("url") or issue.get("html_url") or issue.get("title") or safe_key(issue))
 
-def render_issues():
-    repo = st.session_state.active_repo
 
-    if not repo:
-        st.markdown('<div class="empty-box">Choose a repository from your shortlist first.</div>', unsafe_allow_html=True)
-        return
+def is_issue_saved(issue: Dict[str, Any]) -> bool:
+    key = issue_key(issue)
+    return any(saved.get("_saved_key") == key for saved in st.session_state.saved_issues)
 
-    st.markdown(f"## Issue Explorer")
-    st.caption(f"Analyzing: {repo.get('name')}")
 
-    left, right = st.columns([2.2, 1], gap="large")
+def toggle_save_issue(issue: Dict[str, Any]) -> None:
+    key = issue_key(issue)
 
-    with right:
-        render_issue_filters()
+    if is_issue_saved(issue):
+        st.session_state.saved_issues = [
+            saved for saved in st.session_state.saved_issues
+            if saved.get("_saved_key") != key
+        ]
+    else:
+        saved = dict(issue)
+        saved["_saved_key"] = key
+        saved["_saved_at"] = datetime.now(timezone.utc).isoformat()
+        repo = st.session_state.active_repo_detail or st.session_state.active_repo or {}
+        saved["_repo_name"] = get_repo_display_name(repo)
+        st.session_state.saved_issues.append(saved)
 
-    with left:
-        if not st.session_state.ranked_issues:
-            st.markdown(
-                '<div class="empty-box">Set filters and click <b>Find Best Issues</b>.</div>',
-                unsafe_allow_html=True,
+
+# ─────────────────────────────────────────────────────────────
+# DATA ACTIONS
+# ─────────────────────────────────────────────────────────────
+
+def search_projects() -> None:
+    try:
+        with st.spinner("Finding AI/ML repositories..."):
+            st.session_state.repo_results = cached_search_projects(
+                keywords=st.session_state.keywords,
+                tech_stack=st.session_state.tech_stack,
+                language=st.session_state.language,
+                difficulty=st.session_state.difficulty,
+                sort_by=st.session_state.sort_by,
             )
+        st.session_state.page = "discover"
+
+    except Exception as exc:
+        st.error(f"Search failed: {exc}")
+
+
+def enrich_active_repo(repo: Dict[str, Any]) -> Dict[str, Any]:
+    full_name = repo_full_name(repo)
+    detail = dict(repo)
+
+    if not full_name:
+        detail["summary"] = repo.get("description", "No description available.")
+        return detail
+
+    try:
+        metadata = cached_repo_metadata(full_name)
+        detail.update(
+            {
+                "stars": metadata.get("stars", repo.get("stars", 0)),
+                "forks": metadata.get("forks", repo.get("forks", 0)),
+                "open_issues": metadata.get("open_issues_count", repo.get("open_issues", 0)),
+                "language": metadata.get("language", repo.get("language", "")),
+                "topics": metadata.get("topics", repo.get("topics", [])),
+                "updated_at": metadata.get("updated_at", repo.get("updated_at", "")),
+            }
+        )
+    except Exception:
+        pass
+
+    try:
+        readme = cached_repo_readme(full_name)
+        detail["readme"] = readme
+        summary_data = cached_repo_summary(detail)
+
+        if isinstance(summary_data, dict):
+            detail["summary"] = summary_data.get("summary", detail.get("description", ""))
+        else:
+            detail["summary"] = detail.get("description", "No summary available.")
+    except Exception:
+        detail["summary"] = detail.get("description", "No summary available.")
+
+    return detail
+
+
+def select_repo_for_project(repo: Dict[str, Any]) -> None:
+    add_repo_to_shortlist(repo)
+    st.session_state.active_repo = repo
+    st.session_state.active_repo_detail = None
+    st.session_state.ranked_issues = []
+    st.session_state.selected_issue_idx = 0
+    st.session_state.issue_ai_breakdowns = {}
+    go("queue")
+
+
+def find_and_rank_issues_fast() -> None:
+    repo = st.session_state.active_repo_detail or st.session_state.active_repo
+
+    if not repo:
+        st.warning("Select a repository first.")
+        return
+
+    full_name = repo_full_name(repo)
+
+    if not full_name:
+        st.error("This project does not have a valid GitHub repository URL.")
+        return
+
+    try:
+        with st.spinner("Fetching and ranking issues without AI..."):
+            raw_issues = cached_open_issues(full_name)
+
+        filtered = [issue for issue in raw_issues if issue_matches_filters(issue)]
+
+        if not filtered:
+            st.session_state.ranked_issues = []
+            st.warning("No issues matched your filters.")
             return
 
-        for issue in st.session_state.ranked_issues:
-            render_issue_card(issue)
+        ranked = []
+        for issue in filtered:
+            issue_copy = dict(issue)
+            issue_copy["fast_score"] = round(local_issue_score(issue_copy))
+            issue_copy["issue_type"] = infer_issue_type(issue_copy)
+            issue_copy["ml_area"] = infer_ml_area(issue_copy)
+            issue_copy["required_knowledge"] = infer_required_knowledge(issue_copy)
+            issue_copy["summary"] = truncate(issue_copy.get("body") or issue_copy.get("title"), 160)
+            issue_copy.setdefault("difficulty", "Beginner" if issue_copy["fast_score"] >= 70 else "Intermediate")
+            issue_copy.setdefault("competition", "Low" if int(issue_copy.get("comments", 0) or 0) <= 2 else "Medium")
+            issue_copy.setdefault("skill_match", min(10, max(1, round(issue_copy["fast_score"] / 10))))
+            ranked.append(issue_copy)
+
+        sort_by = st.session_state.issue_sort
+        if sort_by == "Lowest competition":
+            ranked.sort(key=lambda item: int(item.get("comments", 0) or 0))
+        elif sort_by == "Newest":
+            ranked.sort(key=lambda item: item.get("created_at") or "", reverse=True)
+        elif sort_by == "Beginner easiest":
+            ranked.sort(key=lambda item: (item.get("difficulty") != "Beginner", -item.get("fast_score", 0)))
+        else:
+            ranked.sort(key=lambda item: item.get("fast_score", 0), reverse=True)
+
+        st.session_state.ranked_issues = ranked
+        st.session_state.selected_issue_idx = 0
+
+    except Exception as exc:
+        st.error(f"Issue search failed: {exc}")
 
 
-def render_saved():
-    st.markdown("## Saved Issues")
-    st.markdown('<div class="empty-box">Saved issue workflow can be added next.</div>', unsafe_allow_html=True)
+def generate_ai_breakdown_for_selected() -> None:
+    if not st.session_state.ranked_issues:
+        return
+
+    idx = min(st.session_state.selected_issue_idx, len(st.session_state.ranked_issues) - 1)
+    issue = st.session_state.ranked_issues[idx]
+    key = issue_key(issue)
+
+    if key in st.session_state.issue_ai_breakdowns:
+        return
+
+    enriched_issue = dict(issue)
+    enriched_issue["user_skills"] = st.session_state.user_skills
+    enriched_issue["ml_interests"] = st.session_state.ml_interests
+    enriched_issue["required_knowledge"] = issue.get("required_knowledge")
+    enriched_issue["issue_type"] = issue.get("issue_type")
+    enriched_issue["ml_area"] = issue.get("ml_area")
+
+    try:
+        with st.spinner("Generating AI breakdown for this issue..."):
+            ai_result = cached_issue_analysis(enriched_issue, st.session_state.skill_level)
+
+        if isinstance(ai_result, dict):
+            enriched_issue.update(ai_result)
+
+        st.session_state.issue_ai_breakdowns[key] = enriched_issue
+
+    except Exception as exc:
+        st.error(f"AI breakdown failed: {exc}")
 
 
-def create_app():
+# ─────────────────────────────────────────────────────────────
+# NAVIGATION
+# ─────────────────────────────────────────────────────────────
+
+def render_nav() -> None:
+    brand_col, nav_col = st.columns([2.4, 2.4])
+
+    with brand_col:
+        st.markdown("## 🧭 GitScout AI")
+        st.caption("Python + AI/ML open-source contribution coach")
+
+    with nav_col:
+        c1, c2, c3, c4 = st.columns(4)
+
+        with c1:
+            if st.button("Repositories", key="nav_discover", type="primary" if st.session_state.page == "discover" else "secondary", use_container_width=True):
+                go("discover")
+
+        with c2:
+            if st.button("Project", key="nav_queue", type="primary" if st.session_state.page == "queue" else "secondary", use_container_width=True):
+                go("queue")
+
+        with c3:
+            if st.button("Issues", key="nav_issues", type="primary" if st.session_state.page == "issues" else "secondary", use_container_width=True):
+                go("issues")
+
+        with c4:
+            if st.button(f"Saved ({len(st.session_state.saved_issues)})", key="nav_saved", type="primary" if st.session_state.page == "saved" else "secondary", use_container_width=True):
+                go("saved")
+
+    st.divider()
+
+
+# ─────────────────────────────────────────────────────────────
+# DISCOVER PAGE
+# ─────────────────────────────────────────────────────────────
+
+def render_skill_matcher() -> None:
+    with st.container(border=True):
+        st.subheader("Tell GitScout what you know")
+        st.caption("These choices help rank AI/ML repos and issues without calling AI every time.")
+
+        c1, c2, c3 = st.columns(3)
+
+        with c1:
+            st.multiselect(
+                "Your current skills",
+                [
+                    "Python basics",
+                    "NumPy/Pandas",
+                    "Scikit-learn",
+                    "PyTorch",
+                    "TensorFlow",
+                    "NLP",
+                    "Computer Vision",
+                    "Docs",
+                ],
+                key="user_skills",
+            )
+
+        with c2:
+            st.multiselect(
+                "What you want to work on",
+                [
+                    "AI/ML",
+                    "NLP",
+                    "Computer Vision",
+                    "Classical ML",
+                    "Deep Learning",
+                    "Data cleaning",
+                    "MLOps",
+                ],
+                key="ml_interests",
+            )
+
+        with c3:
+            st.multiselect(
+                "Preferred contribution type",
+                [
+                    "Docs",
+                    "Bug",
+                    "Example notebook",
+                    "Data preprocessing",
+                    "Model training",
+                    "Evaluation",
+                    "API/backend",
+                    "Testing",
+                ],
+                key="contribution_types",
+            )
+
+
+def render_repo_refine_panel() -> None:
+    options = cached_filter_options()
+
+    tech_stacks = [""] + options.get("tech_stacks", [])
+    languages = [""] + options.get("languages", [])
+    difficulties = [""] + options.get("difficulties", [])
+
+    if "Python" not in languages:
+        languages.insert(1, "Python")
+
+    if st.session_state.tech_stack not in tech_stacks:
+        st.session_state.tech_stack = ""
+    if st.session_state.language not in languages:
+        st.session_state.language = "Python" if "Python" in languages else ""
+    if st.session_state.difficulty not in difficulties:
+        st.session_state.difficulty = ""
+
+    with st.container(border=True):
+        top_left, top_right = st.columns([5, 1])
+
+        with top_left:
+            st.subheader("Refine AI/ML repositories")
+            st.caption("Use search and GSSoC-style filters to narrow down projects.")
+
+        with top_right:
+            if st.button("Close", key="close_repo_filters", use_container_width=True):
+                st.session_state.repo_filters_open = False
+                st.rerun()
+
+        f1, f2, f3, f4, f5 = st.columns([1.4, 1, 1, 1, 1])
+
+        with f1:
+            st.text_input(
+                "Search",
+                key="repo_filter_keywords",
+                placeholder="NLP, pandas, pytorch, docs...",
+            )
+
+        with f2:
+            st.selectbox(
+                "Tech stack",
+                tech_stacks,
+                key="tech_stack",
+                format_func=lambda value: "All tech stacks" if not value else value,
+            )
+
+        with f3:
+            st.selectbox(
+                "Language",
+                languages,
+                key="language",
+                format_func=lambda value: "All languages" if not value else value,
+            )
+
+        with f4:
+            st.selectbox(
+                "Difficulty",
+                difficulties,
+                key="difficulty",
+                format_func=lambda value: "All difficulties" if not value else value,
+            )
+
+        with f5:
+            st.selectbox(
+                "Sort by",
+                [
+                    DEFAULT_SORT,
+                    "Most Open Issues",
+                    "Recently Updated",
+                    "Beginner Friendly First",
+                    "Name A-Z",
+                ],
+                key="sort_by",
+            )
+
+        a1, a2, _ = st.columns([1, 1, 4])
+
+        with a1:
+            if st.button("Apply filters", key="apply_repo_filters", type="primary", use_container_width=True):
+                st.session_state.keywords = st.session_state.repo_filter_keywords
+                search_projects()
+
+        with a2:
+            if st.button("Reset", key="reset_repo_filters", use_container_width=True):
+                st.session_state.repo_filter_keywords = ""
+                st.session_state.keywords = ""
+                st.session_state.tech_stack = ""
+                st.session_state.language = "Python"
+                st.session_state.difficulty = ""
+                st.session_state.sort_by = DEFAULT_SORT
+                search_projects()
+
+
+def render_repo_card(repo: Dict[str, Any], idx: int) -> None:
+    url = repo_url(repo)
+    display_name = get_repo_display_name(repo)
+    tags = get_repo_tags(repo)
+    summary = truncate(repo.get("summary") or repo.get("description"), 150)
+
+    best_for = infer_best_for(repo)
+    required = infer_required_skills(repo)
+    fit = infer_contribution_fit(repo)
+    work = infer_available_work(repo)
+
+    stars = github_stat(repo.get("stars"))
+    forks = github_stat(repo.get("forks"))
+    open_issues = github_stat(repo.get("open_issues") or repo.get("open_issues_count"))
+
+    with st.container(border=True):
+        h1, h2 = st.columns([0.16, 0.84])
+
+        with h1:
+            st.markdown(f"### {display_name[:1].upper()}")
+
+        with h2:
+            st.markdown(f"**`{display_name}`**")
+            st.caption(f"{fit} · {best_for}")
+
+        st.write(summary)
+        st.caption(f"Best for: {best_for}")
+        st.caption(f"Required: {' · '.join(required)}")
+        st.caption(f"Work: {' · '.join(work)}")
+
+        if tags:
+            st.caption("Tags: " + " · ".join(tags[:4]))
+
+        st.divider()
+
+        if any(value != "—" for value in [stars, forks, open_issues]):
+            m1, m2, m3 = st.columns(3)
+            m1.caption(f"⭐ {stars}")
+            m2.caption(f"🍴 {forks}")
+            m3.caption(f"💬 {open_issues} issues")
+        else:
+            st.caption("GitHub stats load on the project page.")
+
+        b1, b2 = st.columns(2)
+
+        with b1:
+            if st.button("View Project →", key=f"view_repo_{idx}_{safe_key(display_name)}", type="primary", use_container_width=True):
+                select_repo_for_project(repo)
+
+        with b2:
+            st.link_button("GitHub ↗", url, use_container_width=True)
+
+
+def discover_page() -> None:
+    with st.container(border=True):
+        left, right = st.columns([1.15, 0.85])
+
+        with left:
+            st.caption(
+                f"🧭 {len(st.session_state.repo_results)} projects · "
+                f"{len(st.session_state.selected_repos)} shortlisted · "
+                f"{len(st.session_state.ranked_issues)} ranked issues · "
+                f"{len(st.session_state.saved_issues)} saved"
+            )
+            st.title("Find your first AI/ML open-source contribution.")
+            st.write(
+                "GitScout matches Python and AI/ML beginners with contribution-friendly repos, "
+                "then ranks low-competition issues and explains exactly how to start."
+            )
+
+        with right:
+            with st.container(border=True):
+                st.markdown("**🔍 Scout command**")
+                st.caption("Quick search")
+                st.write("Search AI/ML projects by stack, repo name, ML area, or keyword.")
+
+    s1, s2 = st.columns([5, 1])
+
+    with s1:
+        st.text_input(
+            "Search projects",
+            key="hero_keywords",
+            placeholder="Try: pandas docs, NLP, PyTorch, data preprocessing...",
+            label_visibility="collapsed",
+        )
+
+    with s2:
+        if st.button("Search", key="hero_search_btn", type="primary", use_container_width=True):
+            query = st.session_state.hero_keywords.strip() or "python ai ml machine learning"
+            st.session_state.keywords = query
+            st.session_state.repo_filter_keywords = query
+            search_projects()
+
+    render_skill_matcher()
+
+    h1, h2 = st.columns([5, 1])
+
+    with h1:
+        st.subheader("Recommended AI/ML repositories")
+        st.caption("Cards are fast and rule-based. GitHub stats load only when you open a project.")
+
+    with h2:
+        if st.button("⚙ Refine", key="toggle_repo_refine", use_container_width=True):
+            st.session_state.repo_filters_open = not st.session_state.repo_filters_open
+            st.rerun()
+
+    if st.session_state.repo_filters_open:
+        render_repo_refine_panel()
+
+    if not st.session_state.repo_results:
+        st.info("Search projects to begin. Try: `pandas`, `NLP`, `PyTorch`, `data preprocessing`, or `docs`.")
+        return
+
+    for row_start in range(0, len(st.session_state.repo_results), 3):
+        row = st.session_state.repo_results[row_start: row_start + 3]
+        cols = st.columns(3)
+
+        for offset, repo in enumerate(row):
+            with cols[offset]:
+                render_repo_card(repo, row_start + offset)
+
+
+# ─────────────────────────────────────────────────────────────
+# PROJECT PAGE
+# ─────────────────────────────────────────────────────────────
+
+def queue_page() -> None:
+    repo = st.session_state.active_repo
+
+    if not repo:
+        st.warning("Select a repository first.")
+        return
+
+    if st.button("← Back to repositories", key="back_to_repos"):
+        go("discover")
+
+    if st.session_state.active_repo_detail is None:
+        with st.spinner("Loading repository details and AI summary for this repo only..."):
+            st.session_state.active_repo_detail = enrich_active_repo(repo)
+
+    detail = st.session_state.active_repo_detail
+
+    url = repo_url(detail)
+    display_name = get_repo_display_name(detail)
+    tags = get_repo_tags(detail)
+    summary = detail.get("summary") or detail.get("description") or "No summary available."
+    summary = truncate(summary, 650)
+
+    stars = github_stat(detail.get("stars"))
+    forks = github_stat(detail.get("forks"))
+    open_issues = github_stat(detail.get("open_issues") or detail.get("open_issues_count"))
+
+    best_for = infer_best_for(detail)
+    required = infer_required_skills(detail)
+    fit = infer_contribution_fit(detail)
+    work = infer_available_work(detail)
+
+    left, right = st.columns([0.9, 1.1])
+
+    with left:
+        with st.container(border=True):
+            st.caption(f"`{display_name}`")
+            st.header(detail.get("name", display_name))
+            st.write(summary)
+
+            if tags:
+                st.caption("Tags: " + " · ".join(tags))
+
+            s1, s2, s3 = st.columns(3)
+            s1.metric("Stars", stars)
+            s2.metric("Forks", forks)
+            s3.metric("Open issues", open_issues)
+
+            st.divider()
+            st.markdown(f"**Best for:** {best_for}")
+            st.markdown(f"**Required skills:** {' · '.join(required)}")
+            st.markdown(f"**Contribution fit:** {fit}")
+            st.markdown(f"**Available work:** {' · '.join(work)}")
+
+        st.link_button("Open repository on GitHub ↗", url, use_container_width=True)
+
+    with right:
+        with st.container(border=True):
+            st.subheader("Why this repo matches you")
+
+            for reason in dynamic_repo_reasons(detail):
+                st.write(f"✓ {reason}")
+
+        with st.container(border=True):
+            st.subheader("Suggested contribution path")
+            st.write("1. Start with docs/examples or low-comment beginner issues.")
+            st.write("2. Move to small bugs or tests in the same repo.")
+            st.write("3. After one merged PR, try a data/model-related issue.")
+
+        if st.button("Find issues in this repo →", key="goto_issues", type="primary", use_container_width=True):
+            go("issues")
+
+
+# ─────────────────────────────────────────────────────────────
+# ISSUES PAGE
+# ─────────────────────────────────────────────────────────────
+
+def render_issue_refine_panel() -> None:
+    with st.container(border=True):
+        top_left, top_right = st.columns([5, 1])
+
+        with top_left:
+            st.subheader("Refine issue search")
+            st.caption("Competition filters + AI/ML-specific filters. Ranking is instant; AI runs only on selected issue.")
+
+        with top_right:
+            if st.button("Close", key="close_issue_refine", use_container_width=True):
+                st.session_state.issue_filters_open = False
+                st.rerun()
+
+        common_labels = [
+            "good first issue",
+            "help wanted",
+            "bug",
+            "documentation",
+            "enhancement",
+            "frontend",
+            "backend",
+            "ui",
+            "api",
+            "python",
+            "javascript",
+        ]
+
+        c1, c2, c3, c4 = st.columns(4)
+
+        with c1:
+            st.multiselect("Labels", common_labels, key="issue_labels")
+            st.text_input("Custom labels", key="custom_labels", placeholder="auth, api, ui...")
+
+        with c2:
+            st.selectbox("Assignee", ["Only unassigned", "Any", "Assigned only"], key="assignee_filter")
+            st.number_input("Max comments", min_value=0, max_value=50, step=1, key="max_comments")
+
+        with c3:
+            st.selectbox(
+                "Issue type",
+                [
+                    "Any",
+                    "Docs",
+                    "Bug",
+                    "Example notebook",
+                    "Data preprocessing",
+                    "Model training",
+                    "Evaluation",
+                    "API/backend",
+                    "Testing",
+                ],
+                key="issue_type",
+            )
+            st.selectbox(
+                "ML area",
+                [
+                    "Any",
+                    "NLP",
+                    "Computer Vision",
+                    "Classical ML",
+                    "Deep Learning",
+                    "Data cleaning",
+                    "MLOps",
+                    "General",
+                ],
+                key="ml_area",
+            )
+
+        with c4:
+            st.selectbox(
+                "Required knowledge",
+                [
+                    "Any",
+                    "Python only",
+                    "NumPy/Pandas",
+                    "Scikit-learn",
+                    "PyTorch",
+                    "TensorFlow",
+                ],
+                key="required_knowledge",
+            )
+            st.selectbox(
+                "Sort issues",
+                [
+                    "Best match",
+                    "Lowest competition",
+                    "Newest",
+                    "Beginner easiest",
+                ],
+                key="issue_sort",
+            )
+
+        st.text_input("Keyword", key="issue_keywords", placeholder="loading, docs, tokenizer, preprocessing...")
+
+        a1, a2 = st.columns([1, 4])
+
+        with a1:
+            if st.button("Find best issues", key="find_best_issues", type="primary", use_container_width=True):
+                find_and_rank_issues_fast()
+
+        with a2:
+            st.caption("This step does not call AI. It uses labels, comments, assignee, issue text, and your selected skills.")
+
+
+def render_issue_list_item(issue: Dict[str, Any], idx: int) -> None:
+    selected = idx == st.session_state.selected_issue_idx
+    score = int(issue.get("fast_score", 0))
+    summary = truncate(issue.get("summary") or issue.get("body") or issue.get("title"), 135)
+    competition = issue.get("competition_level") or issue.get("competition", "N/A")
+    saved = is_issue_saved(issue)
+
+    with st.container(border=True):
+        c1, c2 = st.columns([0.14, 0.86])
+
+        with c1:
+            st.metric("Score", score_badge(score))
+
+        with c2:
+            st.markdown(f"**{strip_markdown(issue.get('title', 'Untitled issue'))}**")
+            st.caption(summary)
+            st.caption(
+                f"{issue.get('issue_type', 'General')} · "
+                f"{issue.get('ml_area', 'General')} · "
+                f"{issue.get('required_knowledge', 'Python only')} · "
+                f"{competition} competition · "
+                f"{issue.get('comments', 0)} comments"
+            )
+
+        b1, b2 = st.columns(2)
+
+        with b1:
+            label = "Selected" if selected else "Select"
+            if st.button(label, key=f"select_issue_{idx}_{safe_key(issue.get('title', 'issue'))}", use_container_width=True):
+                st.session_state.selected_issue_idx = idx
+                st.rerun()
+
+        with b2:
+            save_label = "Unsave" if saved else "Save"
+            if st.button(save_label, key=f"save_issue_{idx}_{safe_key(issue_key(issue))}", use_container_width=True):
+                toggle_save_issue(issue)
+                st.rerun()
+
+
+def contribution_comment(issue: Dict[str, Any]) -> str:
+    title = issue.get("title", "this issue")
+    first_step = issue.get("first_step") or "I’ll start by reviewing the related files and understanding the expected change."
+
+    return (
+        f"Hi! I’d like to work on this issue.\n\n"
+        f"I reviewed the issue: \"{strip_markdown(title)}\".\n\n"
+        f"My first step will be: {strip_markdown(first_step)}\n\n"
+        f"Please assign this to me if it is still available. Thank you!"
+    )
+
+
+def get_ai_breakdown(issue: Dict[str, Any]) -> Dict[str, Any]:
+    key = issue_key(issue)
+    stored = st.session_state.issue_ai_breakdowns.get(key)
+    return stored or issue
+
+
+def render_issue_detail(issue: Dict[str, Any]) -> None:
+    key = issue_key(issue)
+    enriched = get_ai_breakdown(issue)
+
+    score = int(issue.get("fast_score", 0))
+    labels = unique_clean(enriched.get("labels", []))
+    summary = truncate(enriched.get("summary") or enriched.get("body") or enriched.get("title"), 240)
+    competition = enriched.get("competition_level") or enriched.get("competition", "N/A")
+    saved = is_issue_saved(issue)
+
+    what_to_do = (
+        enriched.get("what_to_do")
+        or enriched.get("explanation")
+        or "This is a locally ranked issue. Generate AI breakdown to get a detailed step-by-step explanation."
+    )
+    likely_files = enriched.get("files_likely_needed") or "Generate AI breakdown to estimate likely files."
+    first_step = enriched.get("first_step") or "Open the issue on GitHub and read the latest maintainer comments."
+
+    with st.container(border=True):
+        top_left, top_right = st.columns([0.75, 0.25])
+
+        with top_left:
+            if labels:
+                st.caption(" · ".join(labels[:6]))
+            st.header(strip_markdown(enriched.get("title", "Untitled issue")))
+
+        with top_right:
+            st.metric("Scout score", score_badge(score))
+
+        st.write(summary)
+
+        d1, d2, d3, d4 = st.columns(4)
+        d1.metric("Issue type", enriched.get("issue_type", "General"))
+        d2.metric("ML area", enriched.get("ml_area", "General"))
+        d3.metric("Comments", enriched.get("comments", 0))
+        d4.metric("Competition", competition)
+
+        st.divider()
+
+        action_1, action_2 = st.columns(2)
+
+        with action_1:
+            if key not in st.session_state.issue_ai_breakdowns:
+                if st.button("Generate AI breakdown", key=f"generate_ai_{safe_key(key)}", type="primary", use_container_width=True):
+                    generate_ai_breakdown_for_selected()
+                    st.rerun()
+            else:
+                st.success("AI breakdown generated.")
+
+        with action_2:
+            save_label = "Unsave issue" if saved else "Save issue"
+            if st.button(save_label, key=f"save_selected_{safe_key(key)}", use_container_width=True):
+                toggle_save_issue(issue)
+                st.rerun()
+
+        st.caption("AI is only called for the selected issue, so ranking stays fast.")
+
+        st.markdown("**⚡ What you'll do**")
+        st.write(truncate(what_to_do, 550))
+
+        st.markdown("**📁 Files likely involved**")
+        st.code(strip_markdown(likely_files), language=None)
+
+        st.markdown("**🚀 First step**")
+        st.write(truncate(first_step, 350))
+
+        st.markdown("**📋 Ready-to-copy comment**")
+        st.code(contribution_comment(enriched), language=None)
+
+    st.link_button("Open issue on GitHub ↗", enriched.get("url", "#"), use_container_width=True)
+
+
+def issues_page() -> None:
+    repo = st.session_state.active_repo_detail or st.session_state.active_repo
+
+    if not repo:
+        st.warning("Select a repository first.")
+        return
+
+    display_name = get_repo_display_name(repo)
+
+    left, right = st.columns([3, 2])
+
+    with left:
+        if st.button("← Back to project", key="back_to_project"):
+            go("queue")
+
+        st.subheader("Issue Explorer")
+        st.caption(f"{display_name} · {st.session_state.skill_level} mode · max {st.session_state.max_comments} comments")
+
+    with right:
+        c1, c2 = st.columns([3, 1])
+
+        with c1:
+            if st.session_state.issue_labels:
+                st.caption("Labels: " + " · ".join(st.session_state.issue_labels[:4]))
+
+        with c2:
+            if st.button("⚙ Refine issues", key="toggle_issue_refine", use_container_width=True):
+                st.session_state.issue_filters_open = not st.session_state.issue_filters_open
+                st.rerun()
+
+    if st.session_state.issue_filters_open:
+        render_issue_refine_panel()
+
+    if not st.session_state.ranked_issues:
+        st.info("Open Refine issues and click Find best issues. Ranking is instant and AI is used only after selecting an issue.")
+        return
+
+    left_col, right_col = st.columns([0.95, 1.05])
+
+    with left_col:
+        for idx, issue in enumerate(st.session_state.ranked_issues):
+            render_issue_list_item(issue, idx)
+
+    with right_col:
+        selected_idx = min(st.session_state.selected_issue_idx, len(st.session_state.ranked_issues) - 1)
+        render_issue_detail(st.session_state.ranked_issues[selected_idx])
+
+
+# ─────────────────────────────────────────────────────────────
+# SAVED PAGE
+# ─────────────────────────────────────────────────────────────
+
+def saved_page() -> None:
+    st.subheader("🔖 Saved issues")
+    st.caption("Saved only for this session. A database can be added later.")
+
+    if not st.session_state.saved_issues:
+        with st.container(border=True):
+            st.write("No saved issues yet.")
+            st.write("Save issues from the Issue Explorer so you can come back to them while the app is running.")
+        return
+
+    for idx, issue in enumerate(st.session_state.saved_issues):
+        with st.container(border=True):
+            st.markdown(f"**{strip_markdown(issue.get('title', 'Untitled issue'))}**")
+            st.caption(issue.get("_repo_name", "Saved repo"))
+            st.write(truncate(issue.get("summary") or issue.get("body") or issue.get("title"), 180))
+
+            c1, c2 = st.columns(2)
+
+            with c1:
+                st.link_button("Open issue on GitHub ↗", issue.get("url", "#"), use_container_width=True)
+
+            with c2:
+                if st.button("Remove", key=f"remove_saved_{idx}_{safe_key(issue_key(issue))}", use_container_width=True):
+                    st.session_state.saved_issues.pop(idx)
+                    st.rerun()
+
+
+# ─────────────────────────────────────────────────────────────
+# APP
+# ─────────────────────────────────────────────────────────────
+
+def create_app() -> None:
     configure_page()
-    init_session()
-    render_sidebar()
-    render_top_nav()
+    init_session_state()
+    inject_css()
+    render_nav()
 
     page = st.session_state.page
 
     if page == "discover":
-        render_discover()
-    elif page == "shortlist":
-        render_shortlist()
+        discover_page()
+    elif page == "queue":
+        queue_page()
     elif page == "issues":
-        render_issues()
+        issues_page()
     elif page == "saved":
-        render_saved()
+        saved_page()
     else:
-        render_discover()
+        discover_page()
