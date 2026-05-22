@@ -7,12 +7,18 @@ from urllib.parse import urlparse
 
 import streamlit as st
 
-from src.ai_agent import analyze_issue, summarize_repository
+from src.ai_agent import (
+    analyze_issue,
+    analyze_issue_deep,
+    generate_contribution_comment,
+    summarize_repository,
+)
 from src.github_client import (
     fetch_open_issues,
     get_gssoc_filter_options,
     get_repository_metadata,
     get_repository_readme,
+    get_issue_context,
     search_gssoc_projects,
 )
 from src.issue_ranker import rank_issues
@@ -120,8 +126,8 @@ h2, h3 {
 
 .stButton > button[kind="primary"],
 .stButton > button[data-testid="baseButton-primary"] {
-    background: linear-gradient(135deg, #2563EB, #7C3AED) !important;
-    border: 1.5px solid #2563EB !important;
+    background: linear-gradient(135deg, #2463EB, #7C3BED) !important;
+    border: 1.5px solid #2463EB !important;
     color: #FFFFFF !important;
     box-shadow: 0 6px 16px rgba(37, 99, 235, 0.25) !important;
 }
@@ -136,7 +142,7 @@ h2, h3 {
 .stButton > button[data-testid="baseButton-secondary"] {
     background: #FFFFFF !important;
     border: 1.5px solid #D6DEE9 !important;
-    color: #2563EB !important;
+    color: #2463EB !important;
     box-shadow: 0 1px 4px rgba(15,23,42,0.05) !important;
 }
 
@@ -151,7 +157,7 @@ h2, h3 {
     border-radius: 13px !important;
     font-weight: 800 !important;
     border: 1.5px solid #D6DEE9 !important;
-    color: #2563EB !important;
+    color: #2463EB !important;
     background: #FFFFFF !important;
 }
 
@@ -261,6 +267,21 @@ def cached_issue_analysis(issue_data: Dict[str, Any], skill_level: str) -> Dict[
     return analyze_issue(issue_data, skill_level)
 
 
+@st.cache_data(ttl=1200, show_spinner=False)
+def cached_issue_context(full_name: str, issue_number: int) -> Dict[str, Any]:
+    return get_issue_context(full_name, issue_number, max_comments=5)
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def cached_deep_issue_analysis(issue_context: Dict[str, Any], user_profile: Dict[str, Any]) -> Dict[str, Any]:
+    return analyze_issue_deep(issue_context, user_profile)
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def cached_contribution_comment(issue_breakdown: Dict[str, Any], style: str) -> Dict[str, Any]:
+    return generate_contribution_comment(issue_breakdown, style)
+
+
 # ─────────────────────────────────────────────────────────────
 # SESSION
 # ─────────────────────────────────────────────────────────────
@@ -277,6 +298,7 @@ def init_session_state() -> None:
         "ranked_issues": [],
         "selected_issue_idx": 0,
         "issue_ai_breakdowns": {},
+        "generated_comments": {},
         "saved_issues": [],
 
         "keywords": "",
@@ -305,6 +327,7 @@ def init_session_state() -> None:
         "ml_area": "Any",
         "required_knowledge": "Any",
         "issue_sort": "Best match",
+        "comment_style": "Short and polite",
     }
 
     for key, value in defaults.items():
@@ -875,25 +898,47 @@ def generate_ai_breakdown_for_selected() -> None:
     if key in st.session_state.issue_ai_breakdowns:
         return
 
-    enriched_issue = dict(issue)
-    enriched_issue["user_skills"] = st.session_state.user_skills
-    enriched_issue["ml_interests"] = st.session_state.ml_interests
-    enriched_issue["required_knowledge"] = issue.get("required_knowledge")
-    enriched_issue["issue_type"] = issue.get("issue_type")
-    enriched_issue["ml_area"] = issue.get("ml_area")
+    repo = st.session_state.active_repo_detail or st.session_state.active_repo or {}
+    full_name = repo_full_name(repo)
+    issue_number = issue.get("number")
 
     try:
-        with st.spinner("Generating AI breakdown for this issue..."):
-            ai_result = cached_issue_analysis(enriched_issue, st.session_state.skill_level)
+        with st.spinner("Fetching full issue context and generating AI breakdown..."):
+            if full_name and issue_number:
+                issue_context = cached_issue_context(full_name, int(issue_number))
+            else:
+                issue_context = dict(issue)
 
+            issue_context.update({
+                "fast_score": issue.get("fast_score"),
+                "issue_type": issue.get("issue_type"),
+                "ml_area": issue.get("ml_area"),
+                "required_knowledge": issue.get("required_knowledge"),
+            })
+
+            user_profile = {
+                "skill_level": st.session_state.skill_level,
+                "user_skills": st.session_state.user_skills,
+                "ml_interests": st.session_state.ml_interests,
+                "contribution_types": st.session_state.contribution_types,
+            }
+
+            ai_result = cached_deep_issue_analysis(issue_context, user_profile)
+
+        enriched_issue = dict(issue)
+        enriched_issue.update(issue_context)
         if isinstance(ai_result, dict):
             enriched_issue.update(ai_result)
+
+        enriched_issue.setdefault("title", issue.get("title", "Untitled issue"))
+        enriched_issue.setdefault("url", issue.get("url", "#"))
+        enriched_issue.setdefault("labels", issue.get("labels", []))
+        enriched_issue.setdefault("comments", issue.get("comments", 0))
 
         st.session_state.issue_ai_breakdowns[key] = enriched_issue
 
     except Exception as exc:
         st.error(f"AI breakdown failed: {exc}")
-
 
 # ─────────────────────────────────────────────────────────────
 # NAVIGATION
@@ -933,9 +978,8 @@ def render_nav() -> None:
 # ─────────────────────────────────────────────────────────────
 
 def render_skill_matcher() -> None:
-    with st.container(border=True):
-        st.subheader("Tell GitScout what you know")
-        st.caption("These choices help rank AI/ML repos and issues without calling AI every time.")
+    with st.expander("Personalize recommendations", expanded=False):
+        st.caption("Optional: these choices help GitScout rank AI/ML repos and issues better.")
 
         c1, c2, c3 = st.columns(3)
 
@@ -985,7 +1029,6 @@ def render_skill_matcher() -> None:
                 ],
                 key="contribution_types",
             )
-
 
 def render_repo_refine_panel() -> None:
     options = cached_filter_options()
@@ -1443,23 +1486,45 @@ def get_ai_breakdown(issue: Dict[str, Any]) -> Dict[str, Any]:
     return stored or issue
 
 
+def _stringify_list(value: Any) -> str:
+    if not value:
+        return "Not clear from issue."
+    if isinstance(value, list):
+        return "\n".join(f"- {strip_markdown(item)}" for item in value if str(item).strip())
+    return strip_markdown(value)
+
+
+def _default_comment(issue: Dict[str, Any]) -> str:
+    title = strip_markdown(issue.get("title", "this issue"))
+    first_step = strip_markdown(issue.get("first_step") or "I’ll first read the issue carefully and reproduce/inspect the relevant part of the project.")
+    return (
+        f"Hi! I’d like to work on this issue.\n\n"
+        f"I understand the task is related to: {title}.\n\n"
+        f"My first step will be: {first_step}\n\n"
+        f"Please assign this to me if it is still available. Thank you!"
+    )
+
+
 def render_issue_detail(issue: Dict[str, Any]) -> None:
     key = issue_key(issue)
     enriched = get_ai_breakdown(issue)
 
     score = int(issue.get("fast_score", 0))
     labels = unique_clean(enriched.get("labels", []))
-    summary = truncate(enriched.get("summary") or enriched.get("body") or enriched.get("title"), 240)
+    summary = truncate(enriched.get("summary") or enriched.get("body") or enriched.get("title"), 260)
     competition = enriched.get("competition_level") or enriched.get("competition", "N/A")
     saved = is_issue_saved(issue)
 
-    what_to_do = (
-        enriched.get("what_to_do")
-        or enriched.get("explanation")
-        or "This is a locally ranked issue. Generate AI breakdown to get a detailed step-by-step explanation."
-    )
-    likely_files = enriched.get("files_likely_needed") or "Generate AI breakdown to estimate likely files."
+    has_ai = key in st.session_state.issue_ai_breakdowns
+
+    core_problem = enriched.get("core_problem") or "Generate AI breakdown to extract the actual core problem from the full issue body."
+    expected_change = enriched.get("expected_change") or "Generate AI breakdown to understand what the maintainer expects to be changed."
+    why_it_matters = enriched.get("why_it_matters") or ""
+    what_to_do = enriched.get("what_to_do") or enriched.get("explanation") or "Generate AI breakdown to get a clear step-by-step explanation."
+    likely_files = enriched.get("files_likely_needed") or "Generate AI breakdown to estimate likely files or project areas."
     first_step = enriched.get("first_step") or "Open the issue on GitHub and read the latest maintainer comments."
+    plan = enriched.get("step_by_step_plan") or []
+    risks = enriched.get("risks_or_unknowns") or []
 
     with st.container(border=True):
         top_left, top_right = st.columns([0.75, 0.25])
@@ -1477,7 +1542,7 @@ def render_issue_detail(issue: Dict[str, Any]) -> None:
         d1, d2, d3, d4 = st.columns(4)
         d1.metric("Issue type", enriched.get("issue_type", "General"))
         d2.metric("ML area", enriched.get("ml_area", "General"))
-        d3.metric("Comments", enriched.get("comments", 0))
+        d3.metric("Comments", enriched.get("comments", enriched.get("comments_count", 0)))
         d4.metric("Competition", competition)
 
         st.divider()
@@ -1485,8 +1550,8 @@ def render_issue_detail(issue: Dict[str, Any]) -> None:
         action_1, action_2 = st.columns(2)
 
         with action_1:
-            if key not in st.session_state.issue_ai_breakdowns:
-                if st.button("Generate AI breakdown", key=f"generate_ai_{safe_key(key)}", type="primary", use_container_width=True):
+            if not has_ai:
+                if st.button("Understand this issue with AI", key=f"generate_ai_{safe_key(key)}", type="primary", use_container_width=True):
                     generate_ai_breakdown_for_selected()
                     st.rerun()
             else:
@@ -1498,22 +1563,81 @@ def render_issue_detail(issue: Dict[str, Any]) -> None:
                 toggle_save_issue(issue)
                 st.rerun()
 
-        st.caption("AI is only called for the selected issue, so ranking stays fast.")
+        st.caption("GitScout uses the issue body as the source of truth. Comments are treated only as extra context.")
 
-        st.markdown("**⚡ What you'll do**")
-        st.write(truncate(what_to_do, 550))
+        st.markdown("**🎯 Core problem**")
+        st.write(truncate(core_problem, 700))
 
-        st.markdown("**📁 Files likely involved**")
-        st.code(strip_markdown(likely_files), language=None)
+        st.markdown("**🛠 Expected change**")
+        st.write(truncate(expected_change, 700))
+
+        if why_it_matters:
+            st.markdown("**💡 Why it matters**")
+            st.write(truncate(why_it_matters, 500))
+
+        st.markdown("**⚡ What you'll likely do**")
+        st.write(truncate(what_to_do, 700))
+
+        st.markdown("**📁 Files / areas likely involved**")
+        st.code(_stringify_list(likely_files), language=None)
+
+        if plan:
+            st.markdown("**🧭 Step-by-step starting plan**")
+            for i, step in enumerate(plan[:6], start=1):
+                st.write(f"{i}. {strip_markdown(step)}")
 
         st.markdown("**🚀 First step**")
-        st.write(truncate(first_step, 350))
+        st.write(truncate(first_step, 450))
 
+        if risks:
+            with st.expander("Risks or unclear parts"):
+                for item in risks[:5]:
+                    st.write(f"- {strip_markdown(item)}")
+
+        with st.expander("Original GitHub issue body", expanded=False):
+            st.write(strip_markdown(enriched.get("body", "No issue body available.")))
+
+        st.divider()
         st.markdown("**📋 Ready-to-copy comment**")
-        st.code(contribution_comment(enriched), language=None)
+
+        style_key = f"comment_style_{safe_key(key)}"
+        style = st.selectbox(
+            "Comment style",
+            ["Short and polite", "Beginner-friendly", "Confident technical", "Detailed plan"],
+            key=style_key,
+        )
+
+        comment_lookup_key = f"{key}:{style}"
+        existing_comment = st.session_state.generated_comments.get(comment_lookup_key)
+
+        if existing_comment:
+            comment_text = existing_comment
+        elif has_ai and style == "Short and polite" and enriched.get("comment_short"):
+            comment_text = enriched.get("comment_short")
+        elif has_ai and style == "Detailed plan" and enriched.get("comment_detailed"):
+            comment_text = enriched.get("comment_detailed")
+        else:
+            comment_text = _default_comment(enriched)
+
+        c1, c2 = st.columns([1, 1])
+        with c1:
+            if st.button("Improve comment with AI", key=f"improve_comment_{safe_key(comment_lookup_key)}", use_container_width=True):
+                try:
+                    with st.spinner("Writing a better GitHub comment..."):
+                        generated = cached_contribution_comment(enriched, style)
+                    st.session_state.generated_comments[comment_lookup_key] = generated.get("comment", comment_text)
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"Comment generation failed: {exc}")
+
+        with c2:
+            if st.button("Reset comment", key=f"reset_comment_{safe_key(comment_lookup_key)}", use_container_width=True):
+                st.session_state.generated_comments.pop(comment_lookup_key, None)
+                st.rerun()
+
+        st.code(comment_text, language=None)
 
     st.link_button("Open issue on GitHub ↗", enriched.get("url", "#"), use_container_width=True)
-
 
 def issues_page() -> None:
     repo = st.session_state.active_repo_detail or st.session_state.active_repo
