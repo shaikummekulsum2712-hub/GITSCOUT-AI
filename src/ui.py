@@ -55,9 +55,10 @@ html, body,
 [data-testid="stAppViewContainer"],
 [data-testid="stMain"] {
     background:
-        radial-gradient(circle at top left, rgba(37, 99, 235, 0.10), transparent 26%),
-        radial-gradient(circle at top right, rgba(124, 58, 237, 0.10), transparent 25%),
-        #F5F7FB !important;
+        radial-gradient(circle at top left, rgba(36, 99, 235, 0.22), transparent 32%),
+        radial-gradient(circle at top right, rgba(124, 59, 237, 0.20), transparent 30%),
+        radial-gradient(circle at 50% 0%, rgba(7, 182, 213, 0.16), transparent 42%),
+        linear-gradient(180deg, #F0F5FF 0%, #F8FAFC 34%, #F5F7FB 100%) !important;
     color: #0F172A !important;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
 }
@@ -109,10 +110,10 @@ h2, h3 {
 
 /* Streamlit bordered containers as cards */
 [data-testid="stVerticalBlockBorderWrapper"] {
-    border-color: #D6DEE9 !important;
+    border-color: #D6E0EF !important;
     border-radius: 24px !important;
-    box-shadow: 0 10px 26px rgba(15, 23, 42, 0.07) !important;
-    background: rgba(255, 255, 255, 0.96) !important;
+    box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08) !important;
+    background: rgba(255, 255, 255, 0.97) !important;
 }
 
 /* Buttons */
@@ -141,7 +142,7 @@ h2, h3 {
 .stButton > button[kind="secondary"],
 .stButton > button[data-testid="baseButton-secondary"] {
     background: #FFFFFF !important;
-    border: 1.5px solid #D6DEE9 !important;
+    border: 1.5px solid #D6E0EF !important;
     color: #2463EB !important;
     box-shadow: 0 1px 4px rgba(15,23,42,0.05) !important;
 }
@@ -156,7 +157,7 @@ h2, h3 {
 [data-testid="stLinkButton"] a {
     border-radius: 13px !important;
     font-weight: 800 !important;
-    border: 1.5px solid #D6DEE9 !important;
+    border: 1.5px solid #D6E0EF !important;
     color: #2463EB !important;
     background: #FFFFFF !important;
 }
@@ -168,7 +169,7 @@ h2, h3 {
 .stMultiSelect div[data-baseweb="select"] > div {
     background: #FFFFFF !important;
     color: #0F172A !important;
-    border-color: #D6DEE9 !important;
+    border-color: #D6E0EF !important;
     border-radius: 14px !important;
     font-size: 14px !important;
     min-height: 2.75rem !important;
@@ -197,6 +198,28 @@ div[data-testid="stVerticalBlock"] {
 button[kind="secondary"]:has(div p) {
     text-align: left !important;
 }
+
+/* Roadmap/premium polish */
+div[data-testid="stVerticalBlockBorderWrapper"]:hover {
+    border-color: #B8C7FF !important;
+    box-shadow: 0 14px 36px rgba(36, 99, 235, 0.10) !important;
+}
+
+.stProgress > div > div > div > div {
+    background: linear-gradient(135deg, #2463EB, #7C3BED, #07B6D5) !important;
+}
+
+[data-testid="stExpander"] {
+    border: 1.5px solid #D6E0EF !important;
+    border-radius: 18px !important;
+    background: rgba(255,255,255,0.78) !important;
+}
+
+[data-testid="stExpander"] summary {
+    font-weight: 800 !important;
+    color: #2463EB !important;
+}
+
 </style>
 """,
         unsafe_allow_html=True,
@@ -328,6 +351,10 @@ def init_session_state() -> None:
         "required_knowledge": "Any",
         "issue_sort": "Best match",
         "comment_style": "Short and polite",
+        "roadmap_built": False,
+        "default_repos_loaded": False,
+        "time_available": "1-2 hours",
+        "roadmap_stage": "Python → NumPy/Pandas",
     }
 
     for key, value in defaults.items():
@@ -785,6 +812,26 @@ def search_projects() -> None:
         st.error(f"Search failed: {exc}")
 
 
+
+def load_default_repos_once() -> None:
+    """Load starter AI/ML repos on first visit so the home page is never empty."""
+    if st.session_state.default_repos_loaded or st.session_state.repo_results:
+        return
+
+    try:
+        with st.spinner("Loading starter AI/ML repositories..."):
+            st.session_state.repo_results = cached_search_projects(
+                keywords="python machine learning ai ml docs",
+                tech_stack="",
+                language="Python",
+                difficulty="",
+                sort_by=DEFAULT_SORT,
+            )
+        st.session_state.default_repos_loaded = True
+    except Exception:
+        st.session_state.default_repos_loaded = True
+
+
 def enrich_active_repo(repo: Dict[str, Any]) -> Dict[str, Any]:
     full_name = repo_full_name(repo)
     detail = dict(repo)
@@ -938,24 +985,37 @@ def generate_ai_breakdown_for_selected() -> None:
         st.session_state.issue_ai_breakdowns[key] = enriched_issue
 
     except Exception as exc:
-        st.error(f"AI breakdown failed: {exc}")
+        # Keep the UI useful even when Gemini/API fails.
+        fallback_issue = dict(issue)
+        fallback_issue.update({
+            "core_problem": "AI breakdown could not be generated. The issue body is still available below; read it as the source of truth.",
+            "expected_change": "Could not extract this automatically. Open the GitHub issue and check the requested change from the maintainer.",
+            "what_to_do": "Review the issue body, identify the expected change, inspect related files, and ask for clarification if needed.",
+            "files_likely_needed": ["Not confidently detected"],
+            "first_step": "Open the issue on GitHub and read the full issue body and latest maintainer comments.",
+            "risks_or_unknowns": [f"AI/API error: {exc}"],
+            "comment_short": "Hi! I’d like to work on this issue. I’ll review the details and start with the expected change. Please assign this to me if available.",
+            "comment_detailed": "Hi! I’d like to work on this issue. I’ll first review the issue body, identify the expected change, inspect the related files, and ask for clarification if needed. Please assign this to me if available.",
+        })
+        st.session_state.issue_ai_breakdowns[key] = fallback_issue
+        st.warning(f"AI breakdown used fallback mode: {exc}")
 
 # ─────────────────────────────────────────────────────────────
 # NAVIGATION
 # ─────────────────────────────────────────────────────────────
 
 def render_nav() -> None:
-    brand_col, nav_col = st.columns([2.4, 2.4])
+    brand_col, nav_col = st.columns([2.5, 2.4])
 
     with brand_col:
         st.markdown("## 🧭 GitScout AI")
-        st.caption("Python + AI/ML open-source contribution coach")
+        st.caption("AI/ML contribution roadmap builder")
 
     with nav_col:
         c1, c2, c3, c4 = st.columns(4)
 
         with c1:
-            if st.button("Repositories", key="nav_discover", type="primary" if st.session_state.page == "discover" else "secondary", use_container_width=True):
+            if st.button("Roadmap", key="nav_discover", type="primary" if st.session_state.page == "discover" else "secondary", use_container_width=True):
                 go("discover")
 
         with c2:
@@ -963,11 +1023,11 @@ def render_nav() -> None:
                 go("queue")
 
         with c3:
-            if st.button("Issues", key="nav_issues", type="primary" if st.session_state.page == "issues" else "secondary", use_container_width=True):
+            if st.button("Issue Coach", key="nav_issues", type="primary" if st.session_state.page == "issues" else "secondary", use_container_width=True):
                 go("issues")
 
         with c4:
-            if st.button(f"Saved ({len(st.session_state.saved_issues)})", key="nav_saved", type="primary" if st.session_state.page == "saved" else "secondary", use_container_width=True):
+            if st.button(f"My Roadmap ({len(st.session_state.saved_issues)})", key="nav_saved", type="primary" if st.session_state.page == "saved" else "secondary", use_container_width=True):
                 go("saved")
 
     st.divider()
@@ -978,14 +1038,15 @@ def render_nav() -> None:
 # ─────────────────────────────────────────────────────────────
 
 def render_skill_matcher() -> None:
-    with st.expander("Personalize recommendations", expanded=False):
-        st.caption("Optional: these choices help GitScout rank AI/ML repos and issues better.")
+    with st.container(border=True):
+        st.subheader("Build your AI/ML contribution roadmap")
+        st.caption("Answer this like a 30-second quiz. GitScout uses it to recommend repos and rank issues.")
 
         c1, c2, c3 = st.columns(3)
 
         with c1:
             st.multiselect(
-                "Your current skills",
+                "I already know",
                 [
                     "Python basics",
                     "NumPy/Pandas",
@@ -1001,7 +1062,7 @@ def render_skill_matcher() -> None:
 
         with c2:
             st.multiselect(
-                "What you want to work on",
+                "I want to learn",
                 [
                     "AI/ML",
                     "NLP",
@@ -1016,7 +1077,7 @@ def render_skill_matcher() -> None:
 
         with c3:
             st.multiselect(
-                "Preferred contribution type",
+                "I want to contribute through",
                 [
                     "Docs",
                     "Bug",
@@ -1029,6 +1090,42 @@ def render_skill_matcher() -> None:
                 ],
                 key="contribution_types",
             )
+            st.selectbox(
+                "Time available",
+                ["30 min", "1-2 hours", "Weekend"],
+                key="time_available",
+            )
+
+        stage_labels = ["Python", "NumPy/Pandas", "Scikit-learn", "PyTorch", "Real PR"]
+        progress = 0.2
+        if "NumPy/Pandas" in st.session_state.user_skills:
+            progress = 0.4
+            st.session_state.roadmap_stage = "NumPy/Pandas → Scikit-learn"
+        if "Scikit-learn" in st.session_state.user_skills:
+            progress = 0.6
+            st.session_state.roadmap_stage = "Scikit-learn → PyTorch"
+        if "PyTorch" in st.session_state.user_skills or "TensorFlow" in st.session_state.user_skills:
+            progress = 0.8
+            st.session_state.roadmap_stage = "Deep Learning → Real PR"
+
+        st.progress(progress, text=f"Roadmap stage: {st.session_state.roadmap_stage}")
+        st.caption(" → ".join(stage_labels))
+
+        b1, b2 = st.columns([1, 3])
+        with b1:
+            if st.button("Build my roadmap", key="build_roadmap_btn", type="primary", use_container_width=True):
+                st.session_state.roadmap_built = True
+                query_parts = ["python", "machine learning"]
+                query_parts.extend(st.session_state.ml_interests or [])
+                query_parts.extend(st.session_state.contribution_types or [])
+                st.session_state.keywords = " ".join(query_parts)
+                st.session_state.hero_keywords = st.session_state.keywords
+                st.session_state.repo_filter_keywords = st.session_state.keywords
+                search_projects()
+                st.rerun()
+        with b2:
+            st.caption("Tip: for your first PR, choose Docs, Bug, or Example notebook with max 5 comments.")
+
 
 def render_repo_refine_panel() -> None:
     options = cached_filter_options()
@@ -1177,27 +1274,30 @@ def render_repo_card(repo: Dict[str, Any], idx: int) -> None:
 
 
 def discover_page() -> None:
+    load_default_repos_once()
+
     with st.container(border=True):
-        left, right = st.columns([1.15, 0.85])
+        left, right = st.columns([1.18, 0.82])
 
         with left:
             st.caption(
-                f"🧭 {len(st.session_state.repo_results)} projects · "
-                f"{len(st.session_state.selected_repos)} shortlisted · "
+                f"🧭 {len(st.session_state.repo_results)} recommended repos · "
                 f"{len(st.session_state.ranked_issues)} ranked issues · "
-                f"{len(st.session_state.saved_issues)} saved"
+                f"{len(st.session_state.saved_issues)} saved to roadmap"
             )
-            st.title("Find your first AI/ML open-source contribution.")
+            st.title("Your AI/ML open-source roadmap starts here.")
             st.write(
-                "GitScout matches Python and AI/ML beginners with contribution-friendly repos, "
-                "then ranks low-competition issues and explains exactly how to start."
+                "Tell GitScout what you know, get beginner-friendly AI/ML repos, then use the Issue Coach "
+                "to understand the task and comment confidently."
             )
 
         with right:
             with st.container(border=True):
-                st.markdown("**🔍 Scout command**")
-                st.caption("Quick search")
-                st.write("Search AI/ML projects by stack, repo name, ML area, or keyword.")
+                st.markdown("**Current loop**")
+                st.write("Discover → Understand → Comment → Get assigned")
+                st.caption("The main feature is not search — it is helping you understand the issue deeply.")
+
+    render_skill_matcher()
 
     s1, s2 = st.columns([5, 1])
 
@@ -1205,7 +1305,7 @@ def discover_page() -> None:
         st.text_input(
             "Search projects",
             key="hero_keywords",
-            placeholder="Try: pandas docs, NLP, PyTorch, data preprocessing...",
+            placeholder="Optional search: pandas docs, NLP, PyTorch, data preprocessing...",
             label_visibility="collapsed",
         )
 
@@ -1216,27 +1316,27 @@ def discover_page() -> None:
             st.session_state.repo_filter_keywords = query
             search_projects()
 
-    render_skill_matcher()
+    with st.expander("Advanced repository filters", expanded=False):
+        render_repo_refine_panel()
 
     h1, h2 = st.columns([5, 1])
 
     with h1:
-        st.subheader("Recommended AI/ML repositories")
-        st.caption("Cards are fast and rule-based. GitHub stats load only when you open a project.")
+        st.subheader("Recommended repos for AI/ML beginners")
+        st.caption("Starter recommendations appear automatically. Open a repo to load real GitHub stats and issue context.")
 
     with h2:
-        if st.button("⚙ Refine", key="toggle_repo_refine", use_container_width=True):
-            st.session_state.repo_filters_open = not st.session_state.repo_filters_open
+        if st.button("Refresh", key="refresh_default_repos", use_container_width=True):
+            st.session_state.default_repos_loaded = False
+            st.session_state.repo_results = []
+            load_default_repos_once()
             st.rerun()
 
-    if st.session_state.repo_filters_open:
-        render_repo_refine_panel()
-
     if not st.session_state.repo_results:
-        st.info("Search projects to begin. Try: `pandas`, `NLP`, `PyTorch`, `data preprocessing`, or `docs`.")
+        st.info("No repos found yet. Try searching: `pandas`, `NLP`, `PyTorch`, `data preprocessing`, or `docs`.")
         return
 
-    for row_start in range(0, len(st.session_state.repo_results), 3):
+    for row_start in range(0, len(st.session_state.repo_results[:12]), 3):
         row = st.session_state.repo_results[row_start: row_start + 3]
         cols = st.columns(3)
 
@@ -1327,106 +1427,90 @@ def queue_page() -> None:
 
 def render_issue_refine_panel() -> None:
     with st.container(border=True):
-        top_left, top_right = st.columns([5, 1])
+        st.subheader("Find low-competition issues")
+        st.caption("Start simple. Advanced filters are hidden so the page feels like a coach, not a form.")
 
-        with top_left:
-            st.subheader("Refine issue search")
-            st.caption("Competition filters + AI/ML-specific filters. Ranking is instant; AI runs only on selected issue.")
-
-        with top_right:
-            if st.button("Close", key="close_issue_refine", use_container_width=True):
-                st.session_state.issue_filters_open = False
-                st.rerun()
-
-        common_labels = [
-            "good first issue",
-            "help wanted",
-            "bug",
-            "documentation",
-            "enhancement",
-            "frontend",
-            "backend",
-            "ui",
-            "api",
-            "python",
-            "javascript",
-        ]
-
-        c1, c2, c3, c4 = st.columns(4)
+        c1, c2, c3 = st.columns([1, 1, 1.2])
 
         with c1:
-            st.multiselect("Labels", common_labels, key="issue_labels")
-            st.text_input("Custom labels", key="custom_labels", placeholder="auth, api, ui...")
+            st.selectbox("Assignee", ["Only unassigned", "Any", "Assigned only"], key="assignee_filter")
 
         with c2:
-            st.selectbox("Assignee", ["Only unassigned", "Any", "Assigned only"], key="assignee_filter")
             st.number_input("Max comments", min_value=0, max_value=50, step=1, key="max_comments")
 
         with c3:
             st.selectbox(
-                "Issue type",
-                [
-                    "Any",
-                    "Docs",
-                    "Bug",
-                    "Example notebook",
-                    "Data preprocessing",
-                    "Model training",
-                    "Evaluation",
-                    "API/backend",
-                    "Testing",
-                ],
-                key="issue_type",
-            )
-            st.selectbox(
-                "ML area",
-                [
-                    "Any",
-                    "NLP",
-                    "Computer Vision",
-                    "Classical ML",
-                    "Deep Learning",
-                    "Data cleaning",
-                    "MLOps",
-                    "General",
-                ],
-                key="ml_area",
-            )
-
-        with c4:
-            st.selectbox(
-                "Required knowledge",
-                [
-                    "Any",
-                    "Python only",
-                    "NumPy/Pandas",
-                    "Scikit-learn",
-                    "PyTorch",
-                    "TensorFlow",
-                ],
-                key="required_knowledge",
-            )
-            st.selectbox(
-                "Sort issues",
-                [
-                    "Best match",
-                    "Lowest competition",
-                    "Newest",
-                    "Beginner easiest",
-                ],
+                "Sort",
+                ["Best match", "Lowest competition", "Newest", "Beginner easiest"],
                 key="issue_sort",
             )
 
-        st.text_input("Keyword", key="issue_keywords", placeholder="loading, docs, tokenizer, preprocessing...")
+        with st.expander("Advanced issue filters", expanded=False):
+            common_labels = [
+                "good first issue",
+                "help wanted",
+                "bug",
+                "documentation",
+                "enhancement",
+                "frontend",
+                "backend",
+                "ui",
+                "api",
+                "python",
+                "javascript",
+            ]
 
-        a1, a2 = st.columns([1, 4])
+            a1, a2, a3 = st.columns(3)
 
-        with a1:
-            if st.button("Find best issues", key="find_best_issues", type="primary", use_container_width=True):
+            with a1:
+                st.multiselect("Labels", common_labels, key="issue_labels")
+                st.text_input("Custom labels", key="custom_labels", placeholder="auth, api, ui...")
+
+            with a2:
+                st.selectbox(
+                    "Issue type",
+                    [
+                        "Any",
+                        "Docs",
+                        "Bug",
+                        "Example notebook",
+                        "Data preprocessing",
+                        "Model training",
+                        "Evaluation",
+                        "API/backend",
+                        "Testing",
+                    ],
+                    key="issue_type",
+                )
+                st.selectbox(
+                    "ML area",
+                    [
+                        "Any",
+                        "NLP",
+                        "Computer Vision",
+                        "Classical ML",
+                        "Deep Learning",
+                        "Data cleaning",
+                        "MLOps",
+                        "General",
+                    ],
+                    key="ml_area",
+                )
+
+            with a3:
+                st.selectbox(
+                    "Required knowledge",
+                    ["Any", "Python only", "NumPy/Pandas", "Scikit-learn", "PyTorch", "TensorFlow"],
+                    key="required_knowledge",
+                )
+                st.text_input("Keyword", key="issue_keywords", placeholder="loading, docs, tokenizer...")
+
+        b1, b2 = st.columns([1, 3])
+        with b1:
+            if st.button("Find beginner issues", key="find_best_issues", type="primary", use_container_width=True):
                 find_and_rank_issues_fast()
-
-        with a2:
-            st.caption("This step does not call AI. It uses labels, comments, assignee, issue text, and your selected skills.")
+        with b2:
+            st.caption("This ranking is instant and rule-based. AI runs only after you select an issue.")
 
 
 def render_issue_list_item(issue: Dict[str, Any], idx: int) -> None:
@@ -1628,7 +1712,10 @@ def render_issue_detail(issue: Dict[str, Any]) -> None:
                     st.session_state.generated_comments[comment_lookup_key] = generated.get("comment", comment_text)
                     st.rerun()
                 except Exception as exc:
-                    st.error(f"Comment generation failed: {exc}")
+                    fallback = _default_comment(enriched)
+                    st.session_state.generated_comments[comment_lookup_key] = fallback
+                    st.warning(f"Comment AI fallback used: {exc}")
+                    st.rerun()
 
         with c2:
             if st.button("Reset comment", key=f"reset_comment_{safe_key(comment_lookup_key)}", use_container_width=True):
@@ -1648,41 +1735,35 @@ def issues_page() -> None:
 
     display_name = get_repo_display_name(repo)
 
-    left, right = st.columns([3, 2])
+    with st.container(border=True):
+        left, right = st.columns([3, 2])
 
-    with left:
-        if st.button("← Back to project", key="back_to_project"):
-            go("queue")
+        with left:
+            if st.button("← Back to project", key="back_to_project"):
+                go("queue")
 
-        st.subheader("Issue Explorer")
-        st.caption(f"{display_name} · {st.session_state.skill_level} mode · max {st.session_state.max_comments} comments")
+            st.subheader("Issue Coach")
+            st.caption(f"{display_name} · {st.session_state.skill_level} mode · max {st.session_state.max_comments} comments")
 
-    with right:
-        c1, c2 = st.columns([3, 1])
+        with right:
+            st.markdown("**Flow:** Found → Understand → Confirm → Comment")
+            st.progress(0.5 if st.session_state.ranked_issues else 0.25)
 
-        with c1:
-            if st.session_state.issue_labels:
-                st.caption("Labels: " + " · ".join(st.session_state.issue_labels[:4]))
-
-        with c2:
-            if st.button("⚙ Refine issues", key="toggle_issue_refine", use_container_width=True):
-                st.session_state.issue_filters_open = not st.session_state.issue_filters_open
-                st.rerun()
-
-    if st.session_state.issue_filters_open:
-        render_issue_refine_panel()
+    render_issue_refine_panel()
 
     if not st.session_state.ranked_issues:
-        st.info("Open Refine issues and click Find best issues. Ranking is instant and AI is used only after selecting an issue.")
+        st.info("Click **Find beginner issues** to rank open issues. Then select one and use **Understand this issue with AI**.")
         return
 
-    left_col, right_col = st.columns([0.95, 1.05])
+    left_col, right_col = st.columns([0.9, 1.1])
 
     with left_col:
+        st.subheader("Ranked issues")
         for idx, issue in enumerate(st.session_state.ranked_issues):
             render_issue_list_item(issue, idx)
 
     with right_col:
+        st.subheader("Understand this issue")
         selected_idx = min(st.session_state.selected_issue_idx, len(st.session_state.ranked_issues) - 1)
         render_issue_detail(st.session_state.ranked_issues[selected_idx])
 
@@ -1692,13 +1773,25 @@ def issues_page() -> None:
 # ─────────────────────────────────────────────────────────────
 
 def saved_page() -> None:
-    st.subheader("🔖 Saved issues")
-    st.caption("Saved only for this session. A database can be added later.")
+    st.subheader("🧭 My Roadmap")
+    st.caption("Your saved contribution path. Session-based for now; database can come later.")
+
+    with st.container(border=True):
+        st.markdown("**Roadmap progress**")
+        st.write("1. Choose skills → 2. Pick repo → 3. Understand issue → 4. Comment → 5. PR")
+        progress_value = 0.2
+        if st.session_state.selected_repos:
+            progress_value = 0.4
+        if st.session_state.ranked_issues:
+            progress_value = 0.6
+        if st.session_state.saved_issues:
+            progress_value = 0.8
+        st.progress(progress_value)
 
     if not st.session_state.saved_issues:
         with st.container(border=True):
             st.write("No saved issues yet.")
-            st.write("Save issues from the Issue Explorer so you can come back to them while the app is running.")
+            st.write("Save issues from the Issue Coach to build your contribution roadmap.")
         return
 
     for idx, issue in enumerate(st.session_state.saved_issues):
@@ -1707,12 +1800,16 @@ def saved_page() -> None:
             st.caption(issue.get("_repo_name", "Saved repo"))
             st.write(truncate(issue.get("summary") or issue.get("body") or issue.get("title"), 180))
 
-            c1, c2 = st.columns(2)
+            c1, c2, c3 = st.columns(3)
 
             with c1:
-                st.link_button("Open issue on GitHub ↗", issue.get("url", "#"), use_container_width=True)
+                st.link_button("Open issue ↗", issue.get("url", "#"), use_container_width=True)
 
             with c2:
+                if st.button("Mark in progress", key=f"progress_saved_{idx}_{safe_key(issue_key(issue))}", use_container_width=True):
+                    st.toast("Marked as in progress for this session.")
+
+            with c3:
                 if st.button("Remove", key=f"remove_saved_{idx}_{safe_key(issue_key(issue))}", use_container_width=True):
                     st.session_state.saved_issues.pop(idx)
                     st.rerun()

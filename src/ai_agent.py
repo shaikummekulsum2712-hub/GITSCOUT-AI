@@ -58,11 +58,23 @@ def _gemini_request(
     return text.strip()
 
 
-def _extract_json(text: str) -> Dict[str, Any]:
-    cleaned = text.strip()
+def _clean_json_text(text: str) -> str:
+    cleaned = str(text or "").strip()
     cleaned = re.sub(r"^```json\s*", "", cleaned, flags=re.IGNORECASE).strip()
     cleaned = re.sub(r"^```\s*", "", cleaned).strip()
     cleaned = re.sub(r"\s*```$", "", cleaned).strip()
+    return cleaned
+
+
+def _extract_json(text: str) -> Dict[str, Any]:
+    """Best-effort JSON extraction.
+
+    Gemini is usually good, but not perfect: it may wrap JSON in markdown,
+    add a sentence before JSON, or occasionally return plain text. This parser
+    prevents the app from crashing by returning a fallback dictionary when JSON
+    extraction fails.
+    """
+    cleaned = _clean_json_text(text)
 
     try:
         return json.loads(cleaned)
@@ -70,13 +82,38 @@ def _extract_json(text: str) -> Dict[str, Any]:
         pass
 
     match = re.search(r"\{[\s\S]*\}", cleaned)
-    if not match:
-        raise GeminiAPIError("Gemini response did not contain valid JSON.")
+    if match:
+        try:
+            return json.loads(match.group(0))
+        except json.JSONDecodeError:
+            pass
 
-    try:
-        return json.loads(match.group(0))
-    except json.JSONDecodeError as exc:
-        raise GeminiAPIError("Gemini JSON parsing failed.") from exc
+    # Fallback: preserve the useful text instead of throwing and breaking UI.
+    fallback = cleaned[:1200] if cleaned else "AI returned an empty or invalid structured response."
+    return {
+        "summary": fallback[:350],
+        "core_problem": fallback,
+        "expected_change": "The model did not return structured JSON, so GitScout is showing the raw explanation as a fallback.",
+        "why_it_matters": "",
+        "what_to_do": fallback,
+        "required_knowledge": [],
+        "files_likely_needed": ["Not confidently detected"],
+        "step_by_step_plan": [
+            "Read the full issue body on GitHub.",
+            "Identify the exact requested change.",
+            "Check the repo files related to the feature or bug.",
+            "Ask a maintainer for clarification if the request is unclear.",
+        ],
+        "first_step": "Open the issue on GitHub and read the full issue body plus the latest maintainer comments.",
+        "risks_or_unknowns": ["AI response was not valid JSON, so this is a fallback explanation."],
+        "difficulty": "Intermediate",
+        "competition": 5,
+        "skill_match": 6,
+        "estimated_time": "Not sure",
+        "comment_short": "Hi! I’d like to work on this issue. I’ll review the details and start with the expected change. Please assign this to me if available.",
+        "comment_detailed": "Hi! I’d like to work on this issue. I’ll first review the issue body, identify the expected change, inspect the related files, and ask for clarification if anything is unclear. Please assign this to me if available.",
+        "explanation": fallback,
+    }
 
 
 def _safe_list(value: Any) -> List[str]:
@@ -244,7 +281,10 @@ ISSUE BODY:
 LATEST COMMENTS:
 {comments_text}
 
-Return ONLY valid JSON with this exact shape:
+Return ONLY valid JSON with this exact shape.
+Do not wrap it in markdown.
+Do not write ```json.
+Do not add any explanation before or after the JSON:
 {{
   "summary": "2 sentence beginner-friendly overview",
   "core_problem": "what is broken/missing/requested, explained simply",
@@ -274,21 +314,30 @@ def generate_contribution_comment(
     style: str = "Short and polite",
     api_key: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Generate or improve the ready-to-copy GitHub issue comment."""
+    """Generate or improve the ready-to-copy GitHub issue comment.
+
+    This intentionally returns plain text, not JSON. Comments are free-form text,
+    and forcing JSON here caused unnecessary failures when Gemini returned a
+    natural comment instead of a JSON object.
+    """
+    style_guidance = {
+        "Short and polite": "Keep it short, polite, and direct. 2-4 sentences.",
+        "Beginner-friendly": "Be honest that the contributor is a beginner, but sound serious and willing to learn.",
+        "Confident technical": "Sound confident and technical, with a concise plan. Do not overpromise.",
+        "Detailed plan": "Include a brief practical plan in 4-6 sentences.",
+    }.get(style, "Keep it polite, natural, and paste-ready.")
+
     prompt = f"""
 You are GitScout AI.
 
-Write a GitHub issue comment for a contributor who wants to ask to work on this issue.
+Write ONLY the GitHub issue comment the user can paste.
+No JSON.
+No markdown headings.
+No bullet list unless the style asks for a detailed plan.
+Do not wrap the answer in quotes.
 
-Comment style: {style}
-
-Rules:
-- Be respectful and natural.
-- Do not sound robotic.
-- Do not overpromise.
-- If style is detailed, include a short practical plan.
-- Keep it paste-ready.
-- Do not include markdown headings.
+Style: {style}
+Style guidance: {style_guidance}
 
 Issue title: {issue_breakdown.get("title", issue_breakdown.get("summary", ""))}
 Core problem: {issue_breakdown.get("core_problem", "")}
@@ -297,14 +346,29 @@ First step: {issue_breakdown.get("first_step", "")}
 Likely files/areas: {issue_breakdown.get("files_likely_needed", [])}
 Required knowledge: {issue_breakdown.get("required_knowledge", [])}
 
-Return ONLY valid JSON:
-{{
-  "comment": "paste-ready comment"
-}}
+Write the final paste-ready comment now.
 """
-    output = _gemini_request(prompt, api_key=api_key, max_output_tokens=500, temperature=0.35)
-    parsed = _extract_json(output)
-    return {"comment": parsed.get("comment", "").strip(), "prompt": prompt}
+    output = _gemini_request(prompt, api_key=api_key, max_output_tokens=600, temperature=0.35)
+    comment = _clean_json_text(output).strip()
+
+    # If Gemini still returns a JSON-ish response, try to read the comment,
+    # but never fail if parsing does not work.
+    try:
+        parsed = json.loads(comment)
+        if isinstance(parsed, dict) and parsed.get("comment"):
+            comment = str(parsed["comment"]).strip()
+    except Exception:
+        pass
+
+    comment = re.sub(r"^comment\s*[:\-]\s*", "", comment, flags=re.IGNORECASE).strip()
+    if not comment:
+        comment = (
+            "Hi! I’d like to work on this issue. I’ll review the issue details, "
+            "identify the expected change, and start with a small focused PR. "
+            "Please assign this to me if available."
+        )
+
+    return {"comment": comment, "prompt": prompt}
 
 
 def _normalize_issue_analysis(parsed: Dict[str, Any], prompt: str) -> Dict[str, Any]:
