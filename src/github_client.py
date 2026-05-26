@@ -224,6 +224,141 @@ def fetch_gssoc_projects() -> List[Dict]:
     return [project for project in projects if project.get("name")]
 
 
+
+def search_github_repositories(
+    keywords: Optional[str] = None,
+    domain: Optional[str] = None,
+    tech_stack: Optional[List[str]] = None,
+    languages: Optional[List[str]] = None,
+    sort_by: str = "Best match",
+    token: Optional[str] = None,
+    per_page: int = 18,
+) -> List[Dict]:
+    """Search public GitHub repositories for any domain.
+
+    Multiple selected languages/tech stacks are treated as OR choices:
+    - Python OR JavaScript OR Go
+    - Auth OR JWT OR OWASP
+
+    Domain is still the main search intent.
+    """
+    tech_stack = [str(x).strip() for x in (tech_stack or []) if str(x).strip()]
+    languages = [str(x).strip() for x in (languages or []) if str(x).strip()]
+
+    domain_terms = {
+        "AI/ML": ["machine-learning", "artificial-intelligence", "deep-learning", "nlp", "computer-vision", "pytorch", "tensorflow"],
+        "Web Development": ["frontend", "web", "react", "nextjs", "javascript", "typescript"],
+        "Backend": ["backend", "api", "server", "fastapi", "django", "flask", "nodejs"],
+        "Cybersecurity": ["security", "cybersecurity", "auth", "owasp", "jwt", "oauth", "encryption"],
+        "DevOps": ["devops", "docker", "kubernetes", "ci-cd", "deployment", "terraform"],
+        "Mobile": ["mobile", "android", "flutter", "react-native", "ios"],
+        "Data Science": ["data-science", "pandas", "numpy", "jupyter", "visualization"],
+        "Blockchain": ["blockchain", "solidity", "web3", "smart-contracts", "ethereum"],
+    }
+
+    # GitHub search treats space-separated terms as AND, so do not join every
+    # selected stack/language into one huge query. Instead, run several smaller
+    # searches and merge results. That gives OR behavior.
+    domain_choices = domain_terms.get(domain or "", [domain or "open-source"])
+    domain_choices = [x for x in domain_choices if x][:3]
+
+    stack_choices = tech_stack[:4] or [""]
+    language_choices = languages[:4] or [""]
+
+    # If user selects almost everything, treat it as "any" to avoid building
+    # dozens of queries and to avoid making results random.
+    if len(tech_stack) >= 7:
+        stack_choices = [""]
+    if len(languages) >= 6:
+        language_choices = [""]
+
+    sort = "stars"
+    order = "desc"
+    if sort_by == "Recently Updated":
+        sort = "updated"
+    elif sort_by == "Most Open Issues":
+        sort = "help-wanted-issues"
+    elif sort_by == "Name A-Z":
+        sort = ""
+
+    def language_qualifier(lang: str) -> str:
+        if not lang:
+            return ""
+        if lang.lower() == "html/css":
+            return "language:HTML"
+        return f"language:{lang}"
+
+    queries = []
+    keyword_text = str(keywords or "").strip()
+
+    for domain_term in domain_choices:
+        for stack in stack_choices:
+            for lang in language_choices:
+                parts = []
+                if keyword_text:
+                    parts.append(keyword_text)
+                if domain_term:
+                    parts.append(domain_term)
+                if stack:
+                    parts.append(str(stack))
+                parts.append("good-first-issues")
+                lq = language_qualifier(lang)
+                if lq:
+                    parts.append(lq)
+
+                q = " ".join(parts).strip()
+                if q and q not in queries:
+                    queries.append(q)
+
+    # Keep API calls bounded.
+    queries = queries[:8] or ["good-first-issues"]
+
+    repos = []
+    seen = set()
+    per_query = max(5, min(10, per_page))
+
+    for q in queries:
+        params = {
+            "q": q,
+            "per_page": per_query,
+            "order": order,
+        }
+        if sort:
+            params["sort"] = sort
+
+        try:
+            data = _github_get("/search/repositories", token=token, params=params)
+        except GitHubClientError:
+            continue
+
+        items = data.get("items", []) if isinstance(data, dict) else []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+
+            full_name = item.get("full_name", "")
+            if not full_name or full_name in seen:
+                continue
+
+            seen.add(full_name)
+            normalized = _normalize_repo_metadata(item)
+            normalized.update({
+                "repo_full_name": full_name,
+                "tech_stack": item.get("topics", []) or [],
+                "difficulty": "Beginner Friendly" if item.get("has_issues", True) else "",
+                "open_issues": item.get("open_issues_count", 0),
+                "good_first_issues": 0,
+                "is_github_search": True,
+                "_matched_query": q,
+            })
+            repos.append(normalized)
+
+            if len(repos) >= per_page:
+                return repos
+
+    return repos
+
+
 def get_repository_metadata(full_name: str, token: Optional[str] = None) -> Dict:
     if not full_name:
         return {}

@@ -578,6 +578,11 @@ Write the final paste-ready comment now.
 
 
 def _normalize_issue_analysis(parsed: Dict[str, Any], prompt: str) -> Dict[str, Any]:
+    def clean_field_or_list(value: Any) -> Any:
+        if isinstance(value, list):
+            return [_clean_labeled_text(item) for item in value if _clean_labeled_text(item)]
+        return _clean_labeled_text(value)
+
     files = parsed.get("files_likely_needed", "Not clear from issue")
     if isinstance(files, str):
         files_value = _clean_labeled_text(files)
@@ -589,15 +594,13 @@ def _normalize_issue_analysis(parsed: Dict[str, Any], prompt: str) -> Dict[str, 
     risks = _clean_list_items(parsed.get("risks_or_unknowns", []))
 
     summary = _clean_labeled_text(parsed.get("summary", ""))
-    core_problem = _clean_labeled_text(parsed.get("core_problem", ""))
-    expected_change = _clean_labeled_text(parsed.get("expected_change", ""))
 
     return {
         "summary": summary,
-        "core_problem": core_problem,
-        "expected_change": expected_change,
-        "why_it_matters": _clean_labeled_text(parsed.get("why_it_matters", "")),
-        "what_to_do": _clean_labeled_text(parsed.get("what_to_do", expected_change or core_problem or summary)),
+        "core_problem": clean_field_or_list(parsed.get("core_problem", "")),
+        "expected_change": clean_field_or_list(parsed.get("expected_change", "")),
+        "why_it_matters": clean_field_or_list(parsed.get("why_it_matters", "")),
+        "what_to_do": clean_field_or_list(parsed.get("what_to_do", parsed.get("expected_change", ""))),
         "why_good_match": _clean_labeled_text(parsed.get("why_good_match", "")),
         "required_knowledge": required,
         "files_likely_needed": files_value,
@@ -605,11 +608,12 @@ def _normalize_issue_analysis(parsed: Dict[str, Any], prompt: str) -> Dict[str, 
         "first_step": _clean_labeled_text(parsed.get("first_step", "")),
         "risks_or_unknowns": risks,
         "difficulty": _clean_labeled_text(parsed.get("difficulty", "Intermediate")) or "Intermediate",
+        "beginner_warning": _clean_labeled_text(parsed.get("beginner_warning", "")),
         "competition": parsed.get("competition", 5),
         "skill_match": parsed.get("skill_match", 6),
         "estimated_time": _clean_labeled_text(parsed.get("estimated_time", "Not sure")) or "Not sure",
         "comment_short": _clean_labeled_text(parsed.get("comment_short", "")),
         "comment_detailed": _clean_labeled_text(parsed.get("comment_detailed", "")),
-        "explanation": _clean_labeled_text(parsed.get("explanation", core_problem or expected_change or summary)),
+        "explanation": clean_field_or_list(parsed.get("explanation", parsed.get("core_problem", summary))),
         "prompt": prompt,
     }

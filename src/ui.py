@@ -7,6 +7,25 @@ from urllib.parse import urlparse
 
 import streamlit as st
 
+
+try:
+    from src.beta_access import (
+        render_beta_gate,
+        render_usage_status,
+        render_feedback_form,
+        can_use_ai,
+        consume_ai_use,
+    )
+except ImportError:
+    from beta_access import (
+        render_beta_gate,
+        render_usage_status,
+        render_feedback_form,
+        can_use_ai,
+        consume_ai_use,
+    )
+
+
 from src.ai_agent import (
     analyze_issue,
     analyze_issue_deep,
@@ -19,6 +38,7 @@ from src.github_client import (
     get_repository_metadata,
     get_repository_readme,
     get_issue_context,
+    search_github_repositories,
     search_gssoc_projects,
 )
 from src.issue_ranker import rank_issues
@@ -280,6 +300,47 @@ code, pre {
     color: #475569 !important;
 }
 
+
+/* v11: force white cards everywhere, even inside nested Streamlit blocks */
+[data-testid="stVerticalBlockBorderWrapper"],
+[data-testid="stVerticalBlockBorderWrapper"] > div,
+[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stVerticalBlock"],
+[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stHorizontalBlock"],
+[data-testid="stVerticalBlockBorderWrapper"] [data-testid="column"],
+[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stElementContainer"] {
+    background: #FFFFFF !important;
+    color: #0A111E !important;
+}
+
+[data-testid="stVerticalBlockBorderWrapper"] h1,
+[data-testid="stVerticalBlockBorderWrapper"] h2,
+[data-testid="stVerticalBlockBorderWrapper"] h3,
+[data-testid="stVerticalBlockBorderWrapper"] h4,
+[data-testid="stVerticalBlockBorderWrapper"] p,
+[data-testid="stVerticalBlockBorderWrapper"] span,
+[data-testid="stVerticalBlockBorderWrapper"] label,
+[data-testid="stVerticalBlockBorderWrapper"] div {
+    color: #0A111E !important;
+}
+
+[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stCaptionContainer"],
+[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stCaptionContainer"] * {
+    color: #475569 !important;
+}
+
+[data-testid="stVerticalBlockBorderWrapper"] textarea {
+    background: #F8FAFC !important;
+    color: #0A111E !important;
+    border: 1px solid #D6E0EF !important;
+}
+
+[data-testid="stVerticalBlockBorderWrapper"] code,
+[data-testid="stVerticalBlockBorderWrapper"] pre {
+    background: #F8FAFC !important;
+    color: #0A111E !important;
+    border: 1px solid #D6E0EF !important;
+}
+
 </style>
 """,
         unsafe_allow_html=True,
@@ -320,6 +381,26 @@ def cached_search_projects(
         language=language or "",
         difficulty=difficulty or "",
         sort_by=sort_by or DEFAULT_SORT,
+    )
+    return results if isinstance(results, list) else []
+
+
+
+@st.cache_data(ttl=900, show_spinner=False)
+def cached_github_repo_search(
+    keywords: str,
+    domain: str,
+    tech_stack: tuple,
+    languages: tuple,
+    sort_by: str,
+) -> List[Dict[str, Any]]:
+    results = search_github_repositories(
+        keywords=keywords or "",
+        domain=domain or "",
+        tech_stack=list(tech_stack or ()),
+        languages=list(languages or ()),
+        sort_by=sort_by or "Best match",
+        per_page=18,
     )
     return results if isinstance(results, list) else []
 
@@ -390,7 +471,7 @@ def init_session_state() -> None:
 
         "domain_filter": "AI/ML",
         "tech_stack": [],
-        "language": ["Python"],
+        "language": [],
         "difficulty": "Beginner Friendly",
         "sort_by": DEFAULT_SORT,
         "skill_level": "Beginner",
@@ -763,16 +844,16 @@ CURATED_AI_ML_REPOS = [
 DOMAIN_OPTIONS = ["AI/ML", "Web Development", "Backend", "Cybersecurity", "DevOps", "Mobile", "Data Science", "Blockchain"]
 DOMAIN_TECH_STACKS = {
     "AI/ML": ["Python", "NumPy", "Pandas", "Scikit-learn", "PyTorch", "TensorFlow", "Keras", "NLP", "Computer Vision", "FastAPI", "MLOps", "Jupyter", "Data preprocessing"],
-    "Web Development": ["React", "Next.js", "TypeScript", "JavaScript", "Tailwind"],
-    "Backend": ["Python", "FastAPI", "Node.js", "Django", "Flask", "PostgreSQL"],
-    "Cybersecurity": ["Security", "Auth", "OWASP", "Python"],
-    "DevOps": ["Docker", "Kubernetes", "CI/CD", "MLOps"],
-    "Mobile": ["React Native", "Flutter", "Android"],
-    "Data Science": ["Python", "Pandas", "NumPy", "Jupyter", "Visualization"],
-    "Blockchain": ["Solidity", "Web3", "The Graph", "Smart contracts"],
+    "Web Development": ["React", "Next.js", "TypeScript", "JavaScript", "Tailwind", "HTML", "CSS", "Vue", "Svelte"],
+    "Backend": ["Python", "FastAPI", "Node.js", "Express", "Django", "Flask", "PostgreSQL", "MongoDB", "Redis", "RabbitMQ"],
+    "Cybersecurity": ["Security", "Auth", "OWASP", "JWT", "OAuth", "Encryption", "Python", "Go"],
+    "DevOps": ["Docker", "Kubernetes", "CI/CD", "GitHub Actions", "Terraform", "Prometheus", "Grafana", "MLOps"],
+    "Mobile": ["React Native", "Flutter", "Android", "Kotlin", "Swift", "iOS"],
+    "Data Science": ["Python", "Pandas", "NumPy", "Jupyter", "Matplotlib", "Visualization", "ETL"],
+    "Blockchain": ["Solidity", "Web3", "The Graph", "Smart contracts", "Ethereum", "Hardhat"],
 }
 LEVEL_OPTIONS = ["Beginner Friendly", "Intermediate", "Advanced"]
-LANGUAGE_OPTIONS = ["Python", "JavaScript", "TypeScript", "Java", "C++", "Go", "Rust", "HTML/CSS"]
+LANGUAGE_OPTIONS = ["Python", "JavaScript", "TypeScript", "Java", "C++", "Go", "Rust", "HTML/CSS", "Kotlin", "Swift", "Solidity", "PHP", "Ruby"]
 SORT_OPTIONS = ["Best match", "Most Good First Issues", "Most Open Issues", "Recently Updated", "Beginner Friendly First", "Name A-Z"]
 
 STARTER_AI_ML_QUERIES = [
@@ -1005,6 +1086,72 @@ def toggle_save_issue(issue: Dict[str, Any]) -> None:
 # ─────────────────────────────────────────────────────────────
 
 
+
+def selected_is_any(selected: Any, all_options: Optional[List[str]] = None, broad_threshold: int = 6) -> bool:
+    items = selected if isinstance(selected, list) else unique_clean(selected)
+    if not items:
+        return True
+    if all_options and set(items).issuperset(set(all_options)):
+        return True
+    return len(items) >= broad_threshold
+
+
+def contains_any_choice(text: str, selected_items: Any, aliases: Optional[Dict[str, List[str]]] = None) -> bool:
+    """OR logic for multi-select filters.
+
+    Empty selection means "Any".
+    Multiple selections mean "match at least one".
+    """
+    items = selected_items if isinstance(selected_items, list) else unique_clean(selected_items)
+    if not items:
+        return True
+
+    text = (text or "").lower()
+    aliases = aliases or {}
+
+    for item in items:
+        key = str(item).lower().strip()
+        if not key:
+            continue
+
+        choices = [key] + [alias.lower() for alias in aliases.get(str(item), [])]
+        if any(choice in text for choice in choices):
+            return True
+
+    return False
+
+
+def match_summary(repo: Dict[str, Any], domain: str, languages: List[str], stacks: List[str]) -> str:
+    text = searchable_repo_text(repo)
+    repo_lang = str(repo.get("language", "") or "").strip()
+
+    matched_parts = []
+
+    if domain:
+        matched_parts.append(domain)
+
+    if languages:
+        lang_hits = []
+        for lang in languages:
+            if repo_lang.lower() == str(lang).lower() or str(lang).lower() in text:
+                lang_hits.append(str(lang))
+        if lang_hits:
+            matched_parts.append("Lang: " + ", ".join(lang_hits[:2]))
+
+    if stacks:
+        stack_hits = []
+        for stack in stacks:
+            if str(stack).lower() in text:
+                stack_hits.append(str(stack))
+        if stack_hits:
+            matched_parts.append("Stack: " + ", ".join(stack_hits[:3]))
+
+    if repo.get("_matched_query"):
+        matched_parts.append("GitHub match")
+
+    return " · ".join(matched_parts[:4]) if matched_parts else "General match"
+
+
 def project_matches_filters(
     repo: Dict[str, Any],
     keywords: str = "",
@@ -1014,41 +1161,57 @@ def project_matches_filters(
     domain: str = "AI/ML",
 ) -> bool:
     text = searchable_repo_text(repo)
-    tags = [tag.lower() for tag in get_repo_tags(repo)]
+    tags_text = " ".join(get_repo_tags(repo)).lower()
+    combined_text = f"{text} {tags_text}"
+
+    domain_terms = {
+        "AI/ML": ["ai", "ml", "machine", "learning", "python", "data", "model", "nlp", "vision", "pytorch", "tensorflow"],
+        "Web Development": ["react", "next", "frontend", "web", "javascript", "typescript", "html", "css"],
+        "Backend": ["backend", "api", "server", "fastapi", "django", "flask", "node", "database"],
+        "Cybersecurity": ["security", "auth", "owasp", "cyber", "jwt", "oauth", "encryption", "vulnerability"],
+        "DevOps": ["devops", "docker", "kubernetes", "ci", "deploy", "terraform", "monitoring"],
+        "Mobile": ["mobile", "android", "flutter", "react native", "ios", "kotlin", "swift"],
+        "Data Science": ["data", "pandas", "numpy", "jupyter", "visualization", "analytics", "etl"],
+        "Blockchain": ["blockchain", "solidity", "web3", "smart contract", "graph", "ethereum"],
+    }
+
+    # Domain is the main intent. It should match at least one domain signal,
+    # but GitHub search results are allowed if they came from the domain query.
     if domain:
-        domain_terms = {
-            "AI/ML": ["ai", "ml", "machine", "learning", "python", "data", "model", "nlp", "vision"],
-            "Web Development": ["react", "next", "frontend", "web", "javascript", "typescript"],
-            "Backend": ["backend", "api", "server", "fastapi", "django", "flask", "node"],
-            "Cybersecurity": ["security", "auth", "owasp", "cyber"],
-            "DevOps": ["devops", "docker", "kubernetes", "ci", "deploy", "mlops"],
-            "Mobile": ["mobile", "android", "flutter", "react native"],
-            "Data Science": ["data", "pandas", "numpy", "jupyter", "visualization"],
-            "Blockchain": ["blockchain", "solidity", "web3", "smart contract", "graph"],
-        }.get(domain, [])
-        if domain_terms and not any(term in text for term in domain_terms):
+        terms = domain_terms.get(domain, [])
+        domain_ok = any(term in combined_text for term in terms) or bool(repo.get("is_github_search"))
+        if terms and not domain_ok:
             return False
+
+    # Keyword behaves as OR words, not all words.
     if keywords:
         words = [w.strip().lower() for w in str(keywords).replace(",", " ").split() if w.strip()]
-        ignore = {"find", "repo", "repos", "project", "projects", "issue", "issues", "good", "first"}
+        ignore = {"find", "repo", "repos", "project", "projects", "issue", "issues", "good", "first", "beginner"}
         words = [w for w in words if w not in ignore and len(w) > 1]
-        if words and not any(word in text for word in words):
+        if words and not any(word in combined_text for word in words):
             return False
+
+    # OR logic inside tech stack. Empty = any stack.
     techs = tech_stack if isinstance(tech_stack, list) else unique_clean(tech_stack)
-    if techs:
-        techs_lower = [str(t).lower() for t in techs if str(t).strip()]
-        if techs_lower and not any(t in text or t in tags for t in techs_lower):
+    if not selected_is_any(techs, DOMAIN_TECH_STACKS.get(domain, []), broad_threshold=7):
+        if not contains_any_choice(combined_text, techs):
             return False
+
+    # OR logic inside languages. Empty = any language.
     langs = language if isinstance(language, list) else unique_clean(language)
-    if langs:
+    if not selected_is_any(langs, LANGUAGE_OPTIONS, broad_threshold=6):
         repo_lang = str(repo.get("language", "")).lower()
-        langs_lower = [str(l).lower() for l in langs if str(l).strip()]
-        if langs_lower and not any(l == repo_lang or l in text for l in langs_lower):
+        lang_text = f"{combined_text} {repo_lang}"
+        if not contains_any_choice(lang_text, langs, {"HTML/CSS": ["html", "css"]}):
             return False
-    if difficulty:
+
+    # Difficulty should not hide good GitHub results too aggressively because
+    # public GitHub repos rarely expose our custom difficulty labels.
+    if difficulty and not repo.get("is_github_search"):
         difficulty_text = str(repo.get("difficulty", "")).lower()
         if difficulty_text and difficulty.lower() not in difficulty_text:
             return False
+
     return True
 
 
@@ -1078,25 +1241,57 @@ def search_projects() -> None:
         tech_stack = st.session_state.tech_stack or []
         languages = st.session_state.language or []
         difficulty = st.session_state.difficulty or ""
-        if domain != "AI/ML":
-            st.warning(f"{domain} is visible for product direction, but live support will be added later. Showing AI/ML for now.")
-            domain = "AI/ML"
-            st.session_state.domain_filter = "AI/ML"
-        with st.spinner("Finding matching repositories..."):
-            curated = curated_projects(keywords=keywords, tech_stack=tech_stack, language=languages, difficulty=difficulty, domain=domain)
+
+        with st.spinner(f"Searching {domain} repositories..."):
+            curated = curated_projects(
+                keywords=keywords,
+                tech_stack=tech_stack,
+                language=languages,
+                difficulty=difficulty,
+                domain=domain,
+            )
+
+            # For GSSoC, use one language hint only, then do real OR filtering locally.
             backend_language = languages[0] if languages else ""
-            backend = cached_search_projects(
+            gssoc = cached_search_projects(
                 keywords=" ".join([keywords, domain] + tech_stack),
                 tech_stack="",
                 language=backend_language,
                 difficulty=difficulty,
                 sort_by=st.session_state.sort_by,
             )
-            backend = [repo for repo in backend if project_matches_filters(repo, keywords, tech_stack, languages, difficulty, domain)]
-            combined = unique_projects(curated + backend)
+            gssoc = [
+                repo for repo in gssoc
+                if project_matches_filters(repo, keywords, tech_stack, languages, difficulty, domain)
+            ]
+
+            # GitHub client now performs OR search by running multiple small queries.
+            github = cached_github_repo_search(
+                keywords=keywords,
+                domain=domain,
+                tech_stack=tuple(tech_stack),
+                languages=tuple(languages),
+                sort_by=st.session_state.sort_by,
+            )
+            github = [
+                repo for repo in github
+                if project_matches_filters(repo, keywords, tech_stack, languages, difficulty, domain)
+            ]
+
+            combined = unique_projects(curated + gssoc + github)
+
             if not combined:
-                combined = curated_projects(domain="AI/ML", language=languages or ["Python"])
+                fallback = cached_github_repo_search(
+                    keywords=domain,
+                    domain=domain,
+                    tech_stack=tuple(),
+                    languages=tuple(),
+                    sort_by="Best match",
+                )
+                combined = unique_projects(fallback)
+
             st.session_state.repo_results = combined[:18]
+
         st.session_state.keywords = keywords
         st.session_state.hero_keywords = keywords
         st.session_state.page = "discover"
@@ -1107,13 +1302,22 @@ def search_projects() -> None:
 def load_default_repos_once(force_refresh: bool = False) -> None:
     if not force_refresh and (st.session_state.default_repos_loaded or st.session_state.repo_results):
         return
+
     query = get_next_starter_query()
     try:
-        with st.spinner(f"Loading starter AI/ML repositories for: {query}"):
+        with st.spinner(f"Loading starter repositories for: {query}"):
             curated = curated_projects(keywords="", tech_stack=[], language=["Python"], difficulty="", domain="AI/ML")
-            backend = cached_search_projects(keywords=query, tech_stack="", language="Python", difficulty="", sort_by=DEFAULT_SORT)
-            backend = [repo for repo in backend if project_matches_filters(repo, query, [], ["Python"], "", "AI/ML")]
-            st.session_state.repo_results = unique_projects(curated + backend)[:18]
+            github = cached_github_repo_search(
+                keywords=query,
+                domain="AI/ML",
+                tech_stack=tuple(),
+                languages=("Python",),
+                sort_by=DEFAULT_SORT,
+            )
+            gssoc = cached_search_projects(keywords=query, tech_stack="", language="Python", difficulty="", sort_by=DEFAULT_SORT)
+            gssoc = [repo for repo in gssoc if project_matches_filters(repo, query, [], ["Python"], "", "AI/ML")]
+            st.session_state.repo_results = unique_projects(curated + gssoc + github)[:18]
+
         st.session_state.keywords = ""
         st.session_state.hero_keywords = ""
         st.session_state.repo_search_text = ""
@@ -1235,6 +1439,252 @@ def find_and_rank_issues_fast() -> None:
             st.error(f"Issue search failed: {exc}")
 
 
+
+def extract_issue_section(body: str, headings: List[str], stop_headings: Optional[List[str]] = None) -> str:
+    """Very small section extractor for GitHub issue templates.
+
+    It is intentionally local and rule-based so the app can still explain issues
+    when Gemini quota/rate-limit fails.
+    """
+    text = strip_markdown(body or "")
+    if not text:
+        return ""
+
+    stop_headings = stop_headings or [
+        "Proposed Solution", "Proposed Changes", "Expected behavior", "Expected Behavior",
+        "Benefits", "Tasks", "Reproduction", "Additional context", "Screenshots",
+        "Problem", "Description", "Motivation", "Acceptance Criteria"
+    ]
+
+    for heading in headings:
+        pattern = re.compile(rf"({re.escape(heading)}\s*:?\s*)(.*)", re.IGNORECASE | re.DOTALL)
+        match = pattern.search(text)
+        if not match:
+            continue
+
+        section = match.group(2).strip()
+        stop_positions = []
+        for stop in stop_headings:
+            if stop.lower() == heading.lower():
+                continue
+            stop_match = re.search(rf"\b{re.escape(stop)}\b\s*:?", section, re.IGNORECASE)
+            if stop_match:
+                stop_positions.append(stop_match.start())
+
+        if stop_positions:
+            section = section[:min(stop_positions)].strip()
+
+        return section[:900].strip()
+
+    return ""
+
+
+def local_issue_breakdown(issue: Dict[str, Any], error: Optional[Exception] = None) -> Dict[str, Any]:
+    """Create a useful issue explanation without AI.
+
+    This is the safety net when Gemini is unavailable/quota-limited. It should
+    still feel like a coach, not like copied issue text.
+    """
+    title = strip_markdown(issue.get("title", "this issue"))
+    body = strip_markdown(issue.get("body", "") or issue.get("summary", ""))
+    lower = f"{title} {body}".lower()
+
+    issue_type = infer_issue_type(issue)
+    ml_area = infer_ml_area(issue)
+
+    # Specialized deterministic explanations for common issue patterns.
+    if "rabbitmq" in lower and ("redis" in lower or "pub/sub" in lower or "pub sub" in lower):
+        core_problem = [
+            "The backend currently appears to depend on Redis Pub/Sub for message publishing and subscription.",
+            "The issue asks for RabbitMQ to be added as a pluggable alternative, so the app can use a more durable broker when needed.",
+        ]
+        expected_change = [
+            "Add a RabbitMQ messaging implementation without removing the existing Redis Pub/Sub flow.",
+            "Expose configuration so the project can choose Redis or RabbitMQ through environment/config settings.",
+            "Keep the rest of the backend using a consistent messaging interface instead of hard-coding one broker everywhere.",
+        ]
+        what_to_do = [
+            "Inspect the current Redis Pub/Sub implementation and understand its publish/subscribe methods.",
+            "Find the interface or service layer used by the backend to send and consume messages.",
+            "Create a RabbitMQ adapter/module with connection, exchange/queue setup, publish, and consume logic.",
+            "Wire the selected broker through config or environment variables and add tests for the new path.",
+        ]
+        likely_files = [
+            "backend messaging/pubsub module",
+            "Redis Pub/Sub implementation folder",
+            "configuration file / environment settings",
+            "tests for messaging or backend services",
+            "documentation or README setup notes",
+        ]
+        required = ["Backend architecture", "Async/message queues", "RabbitMQ basics", "Redis Pub/Sub basics", "Testing"]
+        difficulty = "Intermediate"
+        warning = "This is not just a small docs task. It needs backend design and careful testing so Redis support does not break."
+        first_step = "Find the existing Redis Pub/Sub code and write down the methods the RabbitMQ adapter must match."
+
+    elif "timeout" in lower and ("rag" in lower or "streaming" in lower or "cancellation" in lower):
+        core_problem = [
+            "Long-running RAG, retrieval, LLM inference, or streaming requests may keep running even after the client disconnects or the request takes too long.",
+            "That can waste server resources, leave orphan async tasks, and create poor user experience for stalled requests.",
+        ]
+        expected_change = [
+            "Add centralized timeout handling for long-running requests.",
+            "Support cancelling abandoned async/streaming workflows cleanly.",
+            "Return clear HTTP/SSE errors and log timeout/cancellation events for observability.",
+        ]
+        what_to_do = [
+            "Find where RAG queries, retrieval, and streaming responses are executed.",
+            "Add configurable timeout values through settings/environment config.",
+            "Wrap long-running async operations so they can be cancelled safely.",
+            "Add cleanup/logging and tests for timeout and client-disconnect cases.",
+        ]
+        likely_files = [
+            "backend API route handling RAG queries",
+            "streaming/SSE response handler",
+            "RAG pipeline or retrieval service",
+            "configuration/settings module",
+            "tests for timeout and cancellation behavior",
+        ]
+        required = ["Async Python", "FastAPI/backend requests", "RAG pipeline basics", "Timeout/cancellation handling"]
+        difficulty = "Advanced"
+        warning = "This is a backend reliability task. It is better after understanding the project’s async flow."
+        first_step = "Trace the request path from the API route to the RAG pipeline and identify where long-running tasks are created."
+
+    elif ("new model" in lower or "add model" in lower or "transformers" in lower or "weight conversion" in lower) and ("model" in lower):
+        core_problem = [
+            "The library does not currently support the model mentioned in this issue.",
+            "The requested work is likely to add a new model implementation, not just a small documentation update.",
+        ]
+        expected_change = [
+            "Add model/config implementation files following the repository’s existing model patterns.",
+            "Add weight conversion or loading support if official checkpoints already exist.",
+            "Add tests and documentation/examples so users can load and use the model.",
+        ]
+        what_to_do = [
+            "Study a similar model already implemented in the repo.",
+            "Identify the expected config/model/test/docs structure.",
+            "Implement the model carefully and verify output compatibility.",
+            "Add tests, conversion notes, and documentation.",
+        ]
+        likely_files = [
+            "model implementation folder",
+            "configuration/modeling files",
+            "conversion script",
+            "tests",
+            "documentation/model docs",
+        ]
+        required = ["PyTorch/model internals", "Transformers-style architecture", "Testing", "Model documentation"]
+        difficulty = "Advanced"
+        warning = "This is probably not a good first issue unless you already know model internals and the repo structure."
+        first_step = "Find a similar existing model implementation in the repo and compare what files would be needed."
+
+    elif "troubleshooting" in lower or ("readme" in lower and ("docker" in lower or "env" in lower or "setup" in lower)):
+        core_problem = [
+            "The project setup instructions exist, but beginners may get stuck when common setup errors happen.",
+            "The issue asks for a troubleshooting section so contributors can fix common local setup problems faster.",
+        ]
+        expected_change = [
+            "Add a clear Troubleshooting section to the README or docs.",
+            "Cover common errors like Docker issues, missing environment variables, port conflicts, migrations, or service connection errors.",
+        ]
+        what_to_do = [
+            "Run or inspect the setup flow and list likely beginner errors.",
+            "Add short problem → cause → fix entries to the README/docs.",
+            "Keep the instructions copy-paste friendly and platform-aware where needed.",
+            "Preview the README and make sure formatting is clean.",
+        ]
+        likely_files = ["README.md", ".env.example", "docs/ setup pages"]
+        required = ["Documentation writing", "Basic project setup", "Markdown"]
+        difficulty = "Beginner"
+        warning = ""
+        first_step = "Open the README and find the best place to add a Troubleshooting section."
+
+    else:
+        problem = (
+            extract_issue_section(body, ["Problem", "Description", "Motivation", "Current behavior", "Current Performance Bottleneck"])
+            or body[:500]
+            or title
+        )
+        expected = (
+            extract_issue_section(body, ["Proposed Solution", "Proposed Changes", "Expected behavior", "Expected Behavior", "Acceptance Criteria"])
+            or f"Make a focused change that resolves the request in: {title}"
+        )
+
+        core_problem = [
+            problem[:420],
+            "The current project behavior or documentation does not fully cover what the issue is asking for.",
+        ]
+        expected_change = [
+            expected[:420],
+            "The PR should stay focused on this issue and avoid unrelated refactors.",
+        ]
+        what_to_do = [
+            "Read the full issue body and separate the problem from the proposed solution.",
+            "Find the files or folders related to the affected feature.",
+            "Reproduce or inspect the current behavior before editing.",
+            "Make the smallest focused change that satisfies the expected behavior.",
+        ]
+        likely_files = []
+        if "readme" in lower or issue_type == "Docs":
+            likely_files.extend(["README.md", "docs/ or documentation pages"])
+        if "api" in lower or "backend" in lower or "request" in lower:
+            likely_files.extend(["backend/API request handling code", "service or route handling the affected workflow"])
+        if "frontend" in lower or "ui" in lower:
+            likely_files.extend(["frontend component related to the issue", "UI state/error handling code"])
+        if "test" in lower:
+            likely_files.append("tests/ for the affected feature")
+        if not likely_files:
+            likely_files = ["Files/folders mentioned in the issue body", "Code area related to the issue title"]
+
+        required = ["Git and GitHub PR workflow", "Ability to run the project locally", issue.get("required_knowledge") or "Project stack related to this issue"]
+        advanced_keywords = ["architecture", "distributed", "rag", "streaming", "async cancellation", "timeout", "inference"]
+        difficulty = "Advanced" if any(k in lower for k in advanced_keywords) else ("Beginner" if issue_type == "Docs" else "Intermediate")
+        warning = "This may not be a good first PR. It likely needs repo-specific knowledge and careful testing." if difficulty == "Advanced" else ""
+        first_step = "Open the issue on GitHub, read the full body, and identify the exact expected behavior."
+        expected_change = expected_change
+
+    steps = [
+        first_step,
+        "Find the existing implementation or documentation area related to the issue.",
+        "Make a small focused change that solves only this issue.",
+        "Add a test, docs update, or validation note depending on the task type.",
+        "Open a PR with a short explanation of what changed and how you checked it.",
+    ]
+
+    return {
+        "summary": f"This issue asks for a {difficulty.lower()} {issue_type.lower()} contribution related to: {title}.",
+        "core_problem": core_problem,
+        "expected_change": expected_change if 'expected_change' in locals() else expected_change,
+        "why_it_matters": [
+            "Solving this makes the project easier to use, extend, or maintain.",
+            "A focused PR also helps maintainers review your contribution faster.",
+        ],
+        "what_to_do": what_to_do,
+        "required_knowledge": required,
+        "files_likely_needed": likely_files[:6],
+        "step_by_step_plan": steps,
+        "first_step": first_step,
+        "risks_or_unknowns": [warning] if warning else [],
+        "difficulty": difficulty,
+        "beginner_warning": warning,
+        "competition": issue.get("competition", issue.get("competition_level", "Low")),
+        "skill_match": issue.get("skill_match", 6),
+        "estimated_time": "1-3 hours for docs/small fixes; longer if implementation is complex.",
+        "comment_short": _default_comment({
+            **issue,
+            "core_problem": " ".join(core_problem)[:260],
+            "expected_change": " ".join(expected_change if isinstance(expected_change, list) else [str(expected_change)])[:220],
+            "first_step": first_step,
+        }),
+        "comment_detailed": _default_comment({
+            **issue,
+            "core_problem": " ".join(core_problem)[:260],
+            "expected_change": " ".join(expected_change if isinstance(expected_change, list) else [str(expected_change)])[:220],
+            "first_step": first_step,
+        }),
+        "local_fallback": bool(error),
+    }
+
+
 def generate_ai_breakdown_for_selected() -> None:
     if not st.session_state.ranked_issues:
         return
@@ -1249,6 +1699,8 @@ def generate_ai_breakdown_for_selected() -> None:
     repo = st.session_state.active_repo_detail or st.session_state.active_repo or {}
     full_name = repo_full_name(repo)
     issue_number = issue.get("number")
+
+    issue_context: Dict[str, Any] = dict(issue)
 
     try:
         with st.spinner("Fetching full issue context and generating AI breakdown..."):
@@ -1286,22 +1738,14 @@ def generate_ai_breakdown_for_selected() -> None:
         st.session_state.issue_ai_breakdowns[key] = enriched_issue
 
     except Exception as exc:
-        # Keep the UI useful even when Gemini/API fails.
+        # Keep the UI useful even when Gemini/API quota fails. Do not show scary
+        # raw API errors to the user; show a local coach-style fallback instead.
         fallback_issue = dict(issue)
-        body_preview = strip_markdown(fallback_issue.get("body", ""))[:900]
-        title_preview = strip_markdown(fallback_issue.get("title", "this issue"))
-        fallback_issue.update({
-            "core_problem": body_preview or f"The issue is about: {title_preview}",
-            "expected_change": "Identify the requested change from the issue body, then make a small focused PR that addresses only that change.",
-            "what_to_do": "Read the issue body, check the related files, reproduce or inspect the problem if possible, then implement the smallest useful fix.",
-            "files_likely_needed": ["Files mentioned in the issue body", "README/docs or source files related to the title"],
-            "first_step": "Open the issue body and list the exact behavior the maintainer expects.",
-            "risks_or_unknowns": [f"AI/API error: {exc}"],
-            "comment_short": "Hi! I’d like to work on this issue. I’ll first review the issue body, identify the expected change, and make a focused PR. Please assign this to me if available.",
-            "comment_detailed": "Hi! I’d like to work on this issue. I’ll start by carefully reviewing the issue body and confirming the exact expected behavior. Then I’ll inspect the related files, make a focused change, and include a short validation note in the PR. Please assign this to me if this approach sounds good.",
-        })
+        if isinstance(issue_context, dict):
+            fallback_issue.update(issue_context)
+        fallback_issue.update(local_issue_breakdown(fallback_issue, error=exc))
         st.session_state.issue_ai_breakdowns[key] = fallback_issue
-        st.warning(f"AI breakdown used fallback mode: {exc}")
+        st.warning("AI quota/rate limit hit, so GitScout showed a local fallback explanation. Try AI again later for deeper analysis.")
 
 # ─────────────────────────────────────────────────────────────
 # NAVIGATION
@@ -1340,23 +1784,23 @@ def render_nav() -> None:
 def render_skill_matcher() -> None:
     with st.container(border=True):
         st.subheader("Find repositories")
-        st.caption("GSSoC-style filters. AI/ML is fully supported now; other domains are shown as upcoming tracks.")
+        st.caption("Multiple languages and tech stacks work as OR choices. Empty means Any.")
         c1, c2, c3 = st.columns([1, 1, 1.2])
         with c1:
             st.selectbox("Domain", DOMAIN_OPTIONS, key="domain_filter")
-            if st.session_state.domain_filter != "AI/ML":
-                st.caption("Upcoming track. AI/ML results will be used for now.")
             st.selectbox("Level", LEVEL_OPTIONS, key="difficulty")
         with c2:
-            st.multiselect("Languages", LANGUAGE_OPTIONS, key="language")
+            st.multiselect("Languages", LANGUAGE_OPTIONS, key="language", placeholder="Any language")
+            st.caption("Selected languages = Python OR JavaScript OR Go")
             st.selectbox("Sort by", SORT_OPTIONS, key="sort_by")
         with c3:
             stack_options = DOMAIN_TECH_STACKS.get(st.session_state.domain_filter, DOMAIN_TECH_STACKS["AI/ML"])
             current_stack = [x for x in st.session_state.tech_stack if x in stack_options]
             if current_stack != st.session_state.tech_stack:
                 st.session_state.tech_stack = current_stack
-            st.multiselect("Tech stack", stack_options, key="tech_stack")
-            st.text_input("Search keyword", key="repo_search_text", placeholder="docs, pandas, NLP, data preprocessing...")
+            st.multiselect("Tech stack", stack_options, key="tech_stack", placeholder="Any stack")
+            st.caption("Selected stack = Auth OR JWT OR OWASP")
+            st.text_input("Search keyword", key="repo_search_text", placeholder="docs, auth, backend, JWT...")
         b1, b2, b3 = st.columns([1, 1, 3])
         with b1:
             if st.button("Apply filters", key="apply_main_repo_filters", type="primary", use_container_width=True):
@@ -1366,7 +1810,7 @@ def render_skill_matcher() -> None:
             if st.button("Reset", key="reset_main_repo_filters", use_container_width=True):
                 st.session_state.domain_filter = "AI/ML"
                 st.session_state.tech_stack = []
-                st.session_state.language = ["Python"]
+                st.session_state.language = []
                 st.session_state.difficulty = "Beginner Friendly"
                 st.session_state.sort_by = DEFAULT_SORT
                 st.session_state.repo_search_text = ""
@@ -1412,6 +1856,16 @@ def render_repo_card(repo: Dict[str, Any], idx: int) -> None:
         st.caption(f"Required: {' · '.join(required)}")
         st.caption(f"Work: {' · '.join(work)}")
 
+        st.caption(
+            "Matched: "
+            + match_summary(
+                repo,
+                st.session_state.domain_filter,
+                st.session_state.language or [],
+                st.session_state.tech_stack or [],
+            )
+        )
+
         if tags:
             st.caption("Tags: " + " · ".join(tags[:4]))
 
@@ -1454,7 +1908,7 @@ def discover_page() -> None:
     h1, h2 = st.columns([5, 1])
     with h1:
         st.subheader("Matching repositories")
-        st.caption("Curated AI/ML repos + live project search. Filters now control these results.")
+        st.caption("Live GitHub + project search. Filters use OR within languages/stacks and AND across filter groups.")
     with h2:
         if st.button("Refresh", key="refresh_default_repos", use_container_width=True):
             st.session_state.default_repos_loaded = False
@@ -1702,11 +2156,21 @@ def as_bullet_points(value: Any, max_items: int = 5) -> List[str]:
         text = clean_ai_field(value)
         if not text:
             return []
+        if text.strip().startswith("{") or '"summary"' in text[:160]:
+            return ["AI returned an invalid structure. Regenerate the breakdown or use the original issue body below."]
         rough = re.split(r"(?:\n+|\d+\.\s+|;\s+)", text)
         if len(rough) <= 1:
             rough = re.split(r"(?<=[.!?])\s+", text)
         items = [clean_ai_field(item) for item in rough]
-    return [item for item in items if item][:max_items]
+
+    cleaned = []
+    for item in items:
+        if not item:
+            continue
+        if item.strip().startswith("{") or '"summary"' in item[:160]:
+            continue
+        cleaned.append(item)
+    return cleaned[:max_items]
 
 
 def render_bullets(items: List[str]) -> None:
@@ -1745,15 +2209,19 @@ def _stringify_list(value: Any) -> str:
 
 def _default_comment(issue: Dict[str, Any]) -> str:
     title = strip_markdown(issue.get("title", "this issue"))
-    core = strip_markdown(issue.get("core_problem") or issue.get("summary") or title)
-    expected = strip_markdown(issue.get("expected_change") or "make the requested change in a focused PR")
+    core_value = issue.get("core_problem") or issue.get("summary") or title
+    expected_value = issue.get("expected_change") or "make the requested change in a focused PR"
+
+    core = " ".join(core_value) if isinstance(core_value, list) else strip_markdown(core_value)
+    expected = " ".join(expected_value) if isinstance(expected_value, list) else strip_markdown(expected_value)
     first_step = strip_markdown(issue.get("first_step") or "review the issue carefully and inspect the relevant files before making changes")
+
     return (
         f"Hi! I’d like to work on this issue.\n\n"
-        f"I understand that the issue is about {core[:260]}. "
-        f"My approach would be to first {first_step}. "
-        f"After that, I’ll focus on {expected[:220]} without making unrelated changes. "
-        f"I’ll also check the existing behavior and add a short validation note in the PR so it is easier to review.\n\n"
+        f"I understand that this issue is about {core[:260]}. "
+        f"My first step would be to {first_step}. "
+        f"After that, I’ll make a focused change for {expected[:220]}, avoid unrelated modifications, "
+        f"and include a short validation note or test details in the PR so it is easier to review.\n\n"
         f"Please assign this to me if it is still available. Thank you!"
     )
 
@@ -1770,10 +2238,10 @@ def render_issue_detail(issue: Dict[str, Any]) -> None:
 
     has_ai = key in st.session_state.issue_ai_breakdowns
 
-    core_problem = clean_ai_field(enriched.get("core_problem") or "Generate AI breakdown to extract the actual core problem from the full issue body.")
-    expected_change = clean_ai_field(enriched.get("expected_change") or "Generate AI breakdown to understand what the maintainer expects to be changed.")
-    why_it_matters = clean_ai_field(enriched.get("why_it_matters") or "")
-    what_to_do = clean_ai_field(enriched.get("what_to_do") or enriched.get("explanation") or "Generate AI breakdown to get a clear step-by-step explanation.")
+    core_problem = enriched.get("core_problem") or "Generate AI breakdown to extract the actual core problem from the full issue body."
+    expected_change = enriched.get("expected_change") or "Generate AI breakdown to understand what the maintainer expects to be changed."
+    why_it_matters = enriched.get("why_it_matters") or ""
+    what_to_do = enriched.get("what_to_do") or enriched.get("explanation") or "Generate AI breakdown to get a clear step-by-step explanation."
     likely_files = enriched.get("files_likely_needed") or ["Generate AI breakdown to estimate likely files or project areas."]
     first_step = clean_ai_field(enriched.get("first_step") or "Open the issue on GitHub and read the latest maintainer comments.")
     plan = enriched.get("step_by_step_plan") or []
@@ -1805,10 +2273,26 @@ def render_issue_detail(issue: Dict[str, Any]) -> None:
         with action_1:
             if not has_ai:
                 if st.button("Understand this issue with AI", key=f"generate_ai_{safe_key(key)}", type="primary", use_container_width=True):
-                    generate_ai_breakdown_for_selected()
-                    st.rerun()
+                    email = st.session_state.get("beta_email", "")
+
+                    if not can_use_ai(email):
+                        st.warning("You used your 2 beta AI generations. Please give feedback to unlock more later.")
+                    else:
+                        used = consume_ai_use(
+                            email=email,
+                            action="ai_breakdown",
+                            issue_url=enriched.get("html_url") or enriched.get("url", ""),
+                            repo_name=get_repo_display_name(st.session_state.active_repo_detail or st.session_state.active_repo or {}),
+                        )
+
+                        if used:
+                            generate_ai_breakdown_for_selected()
+                            st.rerun()
             else:
-                st.success("AI breakdown generated.")
+                if enriched.get("local_fallback"):
+                    st.info("Local fallback explanation shown. AI quota may be exhausted; try again later for deeper analysis.")
+                else:
+                    st.success("AI breakdown generated.")
 
         with action_2:
             save_label = "Unsave issue" if saved else "Save issue"
@@ -1850,6 +2334,10 @@ def render_issue_detail(issue: Dict[str, Any]) -> None:
         clean_risks = [
             item for item in as_bullet_points(risks, 5)
             if "not valid json" not in item.lower()
+            and "api error" not in item.lower()
+            and "quota" not in item.lower()
+            and "rate limit" not in item.lower()
+            and "429" not in item.lower()
         ]
         if clean_risks:
             st.markdown("### ⚠️ Risks / unclear parts")
@@ -1874,6 +2362,7 @@ def render_issue_detail(issue: Dict[str, Any]) -> None:
 
         st.divider()
         st.markdown("**📋 Ready-to-copy comment**")
+        st.caption("Uses the same assignment-comment generator as the Comment page. Click generate to make it longer/specific.")
 
         style_key = f"comment_style_{safe_key(key)}"
         style = st.selectbox(
@@ -1887,26 +2376,35 @@ def render_issue_detail(issue: Dict[str, Any]) -> None:
 
         if existing_comment:
             comment_text = existing_comment
-        elif has_ai and style == "Short and polite" and enriched.get("comment_short"):
-            comment_text = enriched.get("comment_short")
-        elif has_ai and enriched.get("comment_detailed"):
-            comment_text = enriched.get("comment_detailed")
         else:
             comment_text = _default_comment(enriched)
 
         c1, c2 = st.columns([1, 1])
         with c1:
-            if st.button("Generate / improve assignment comment", key=f"improve_comment_{safe_key(comment_lookup_key)}", use_container_width=True):
-                try:
-                    with st.spinner("Writing a better GitHub comment..."):
-                        generated = cached_contribution_comment(enriched, style)
-                    st.session_state.generated_comments[comment_lookup_key] = generated.get("comment", comment_text)
-                    st.rerun()
-                except Exception as exc:
-                    fallback = _default_comment(enriched)
-                    st.session_state.generated_comments[comment_lookup_key] = fallback
-                    st.warning(f"Comment AI fallback used: {exc}")
-                    st.rerun()
+            if st.button("Generate assignment comment", key=f"improve_comment_{safe_key(comment_lookup_key)}", use_container_width=True):
+                email = st.session_state.get("beta_email", "")
+
+                if not can_use_ai(email):
+                    st.warning("You used your 2 beta AI generations. Please give feedback to unlock more later.")
+                else:
+                    used = consume_ai_use(
+                        email=email,
+                        action="assignment_comment_from_issue_coach",
+                        issue_url=enriched.get("html_url") or enriched.get("url", ""),
+                        repo_name=get_repo_display_name(st.session_state.active_repo_detail or st.session_state.active_repo or {}),
+                    )
+
+                    if used:
+                        try:
+                            with st.spinner("Writing a better GitHub comment..."):
+                                generated = cached_contribution_comment(enriched, style)
+                            st.session_state.generated_comments[comment_lookup_key] = generated.get("comment", comment_text)
+                            st.rerun()
+                        except Exception as exc:
+                            fallback = _default_comment(enriched)
+                            st.session_state.generated_comments[comment_lookup_key] = fallback
+                            st.warning(f"Comment AI fallback used: {exc}")
+                            st.rerun()
 
         with c2:
             if st.button("Reset comment", key=f"reset_comment_{safe_key(comment_lookup_key)}", use_container_width=True):
@@ -1966,8 +2464,20 @@ def render_issue_url_comment_box() -> None:
         with c2:
             st.selectbox("Comment style", ["Short and polite", "Beginner-friendly", "Confident technical", "Detailed plan"], key="issue_url_comment_style")
         if st.button("Generate assignment comment", key="generate_url_comment", type="primary", use_container_width=True):
-            generate_comment_from_issue_url()
-            st.rerun()
+            email = st.session_state.get("beta_email", "")
+
+            if not can_use_ai(email):
+                st.warning("You used your 2 beta AI generations. Please give feedback to unlock more later.")
+            else:
+                used = consume_ai_use(
+                    email=email,
+                    action="assignment_comment_from_url",
+                    issue_url=st.session_state.get("issue_url_input", ""),
+                )
+
+                if used:
+                    generate_comment_from_issue_url()
+                    st.rerun()
         if st.session_state.issue_url_generated_comment:
             st.markdown("**Ready-to-copy comment**")
             st.code(st.session_state.issue_url_generated_comment, language=None)
@@ -2076,11 +2586,15 @@ def saved_page() -> None:
 # ─────────────────────────────────────────────────────────────
 # APP
 # ─────────────────────────────────────────────────────────────
-
 def create_app() -> None:
     configure_page()
     init_session_state()
     inject_css()
+
+    if not render_beta_gate():
+        return
+
+    render_usage_status()
     render_nav()
 
     page = st.session_state.page
@@ -2097,3 +2611,5 @@ def create_app() -> None:
         saved_page()
     else:
         discover_page()
+
+    render_feedback_form()
