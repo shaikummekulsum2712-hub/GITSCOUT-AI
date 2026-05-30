@@ -192,7 +192,18 @@ def render_usage_status() -> None:
     if left > 0:
         st.success(f"AI uses left: {left}/{MAX_FREE_AI_USES}")
     else:
-        st.warning("You used your 2 beta AI generations. Please give feedback to help improve GitScout.")
+        # Prominent feedback banner matching the sleek dark theme
+        st.markdown(
+            """
+            <div style='background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.25); padding: 20px; border-radius: 12px; margin-bottom: 20px;'>
+                <h3 style='margin: 0; color: #F59E0B; font-size: 1.1rem; font-weight: 700;'>⚠️ Beta limit reached</h3>
+                <p style='margin: 6px 0 0 0; color: #E2E8F0; font-size: 0.95rem;'>You have used your 2 free AI generations. Please fill out the feedback form below to help us improve GitScout!</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        # Show feedback form immediately below the banner
+        render_feedback_form()
 
 
 def render_feedback_form() -> None:

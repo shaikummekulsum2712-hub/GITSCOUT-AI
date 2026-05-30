@@ -1,5 +1,6 @@
 
 import hashlib
+import html
 import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -60,291 +61,675 @@ def configure_page() -> None:
         initial_sidebar_state="collapsed",
     )
 
-
 def inject_css() -> None:
     """
-    Dark navy GitScout shell + readable white cards.
-    This avoids the current issue where card text becomes invisible on navy.
+    Premium GitScout AI UI theme.
+    Focus: readable white cards, stronger hierarchy, clean dropdowns, less Streamlit-default feel.
     """
     st.markdown(
         """
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
 :root {
-    --gs-bg: #0A111E;
-    --gs-bg-2: #0F2B57;
-    --gs-card: #FFFFFF;
-    --gs-page: #F5F7FB;
-    --gs-surface: #F0F5FF;
-    --gs-text: #0A111E;
-    --gs-muted: #475569;
-    --gs-border: #D6E0EF;
-    --gs-blue: #2463EB;
-    --gs-purple: #7C3BED;
-    --gs-cyan: #07B6D5;
-    --gs-success: #11B6A5;
-    --gs-warning: #F59E0B;
-    --gs-danger: #EF4444;
+    --bg: #F4F6FA;
+    --surface: #FFFFFF;
+    --surface-soft: #F8FAFC;
+    --surface-hover: #FDFEFF;
+    --ink: #101828;
+    --ink-2: #344054;
+    --muted: #4B5563;
+    --muted-2: #667085;
+    --line: #E4E7EC;
+    --line-2: #D0D5DD;
+    --primary: #315CF6;
+    --primary-hover: #2448D8;
+    --primary-soft: #EEF3FF;
+    --ai: #7C3AED;
+    --ai-soft: #F4F0FF;
+    --success: #079455;
+    --success-soft: #ECFDF3;
+    --warning: #DC6803;
+    --warning-soft: #FFFAEB;
+    --danger: #D92D20;
+    --danger-soft: #FEF3F2;
+    --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06);
+    --shadow-md: 0 10px 30px rgba(16, 24, 40, 0.08);
+    --shadow-lg: 0 24px 70px rgba(16, 24, 40, 0.13);
+    --radius: 18px;
 }
 
-/* Main app background: navy, but not applied inside cards */
+* { box-sizing: border-box !important; }
+
 html, body,
 [data-testid="stAppViewContainer"],
 [data-testid="stMain"] {
-    background:
-        radial-gradient(circle at 15% 0%, rgba(36, 99, 235, 0.25), transparent 28%),
-        radial-gradient(circle at 85% 0%, rgba(124, 59, 237, 0.25), transparent 28%),
-        linear-gradient(180deg, #0A111E 0%, #0F2B57 42%, #0A111E 100%) !important;
-    color: #FFFFFF !important;
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
+    background: var(--bg) !important;
+    color: var(--ink) !important;
+    font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+    -webkit-font-smoothing: antialiased !important;
 }
 
-[data-testid="stHeader"],
-[data-testid="stToolbar"],
-[data-testid="stSidebar"],
-#MainMenu,
-footer,
-.stDeployButton {
-    display: none !important;
-    visibility: hidden !important;
-}
+[data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stSidebar"],
+#MainMenu, footer, .stDeployButton { display: none !important; visibility: hidden !important; }
 
 .main .block-container {
-    padding-top: 1.2rem !important;
-    padding-left: 2.2rem !important;
-    padding-right: 2.2rem !important;
-    max-width: 1360px !important;
+    max-width: 1440px !important;
+    padding: 1.5rem 2.3rem 3rem !important;
 }
 
-/* Default text outside cards */
-h1, h2, h3, h4, p, span, label, div {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
+h1, h2, h3, h4, h5, h6, p, span, label, div, button, li, a {
+    font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
 }
 
-/* Fix Streamlit bordered cards.
-   The important part is targeting BOTH the wrapper and its child divs. */
+h1 { font-size: 2.25rem !important; line-height: 1.12 !important; letter-spacing: -0.045em !important; font-weight: 800 !important; color: var(--ink) !important; }
+h2 { font-size: 1.45rem !important; line-height: 1.25 !important; letter-spacing: -0.03em !important; font-weight: 750 !important; color: var(--ink) !important; }
+h3 { font-size: 1.1rem !important; line-height: 1.3 !important; letter-spacing: -0.02em !important; font-weight: 700 !important; color: var(--ink) !important; }
+
+[data-testid="stMarkdownContainer"] p {
+    color: var(--ink-2) !important;
+    font-size: 14.5px !important;
+    line-height: 1.65 !important;
+}
+
+[data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] * {
+    color: var(--muted) !important;
+    font-size: 12.5px !important;
+    line-height: 1.45 !important;
+    font-weight: 500 !important;
+}
+
+/* Streamlit bordered containers become clean cards */
 [data-testid="stVerticalBlockBorderWrapper"] {
-    background: #FFFFFF !important;
-    border: 1.5px solid var(--gs-border) !important;
-    border-radius: 24px !important;
-    box-shadow: 0 18px 44px rgba(0, 0, 0, 0.20) !important;
-    color: var(--gs-text) !important;
+    background: var(--surface) !important;
+    border: 1px solid var(--line) !important;
+    border-radius: var(--radius) !important;
+    box-shadow: var(--shadow-sm) !important;
     overflow: hidden !important;
+}
+
+[data-testid="stVerticalBlockBorderWrapper"]:hover {
+    border-color: var(--line-2) !important;
+    box-shadow: var(--shadow-md) !important;
 }
 
 [data-testid="stVerticalBlockBorderWrapper"] > div,
 [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stVerticalBlock"],
-[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stMarkdownContainer"],
-[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stMetric"],
-[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stHorizontalBlock"] {
+[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stHorizontalBlock"],
+[data-testid="stVerticalBlockBorderWrapper"] [data-testid="column"],
+[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stMarkdownContainer"] {
     background: transparent !important;
-    color: var(--gs-text) !important;
+    color: var(--ink) !important;
 }
 
-/* Force all text INSIDE cards readable */
 [data-testid="stVerticalBlockBorderWrapper"] h1,
 [data-testid="stVerticalBlockBorderWrapper"] h2,
 [data-testid="stVerticalBlockBorderWrapper"] h3,
 [data-testid="stVerticalBlockBorderWrapper"] h4,
+[data-testid="stVerticalBlockBorderWrapper"] strong { color: var(--ink) !important; }
+
 [data-testid="stVerticalBlockBorderWrapper"] p,
 [data-testid="stVerticalBlockBorderWrapper"] span,
-[data-testid="stVerticalBlockBorderWrapper"] label,
-[data-testid="stVerticalBlockBorderWrapper"] div {
-    color: var(--gs-text) !important;
-}
-
-[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stCaptionContainer"],
-[data-testid="stVerticalBlockBorderWrapper"] small {
-    color: var(--gs-muted) !important;
-    font-weight: 650 !important;
-}
-
-/* Outside-card headings should be white on navy */
-.main .block-container > div > div > div:not([data-testid="stVerticalBlockBorderWrapper"]) h1,
-.main .block-container > div > div > div:not([data-testid="stVerticalBlockBorderWrapper"]) h2,
-.main .block-container > div > div > div:not([data-testid="stVerticalBlockBorderWrapper"]) h3 {
-    color: #FFFFFF !important;
-}
-
-/* Main text rules */
-[data-testid="stMarkdownContainer"] p {
-    font-size: 15px !important;
-    line-height: 1.65 !important;
-    font-weight: 500 !important;
-}
+[data-testid="stVerticalBlockBorderWrapper"] div { color: var(--ink-2) !important; }
 
 /* Buttons */
-.stButton > button {
-    border-radius: 13px !important;
-    font-weight: 850 !important;
-    font-family: 'Inter', sans-serif !important;
+.stButton > button, [data-testid="stLinkButton"] a {
     min-height: 2.65rem !important;
-    transition: all 0.15s ease !important;
+    border-radius: 12px !important;
+    border: 1px solid var(--line-2) !important;
+    background: var(--surface) !important;
+    color: var(--ink-2) !important;
+    font-weight: 650 !important;
+    font-size: 14px !important;
+    box-shadow: var(--shadow-sm) !important;
+    transition: 0.16s ease !important;
+    text-decoration: none !important;
 }
 
-.stButton > button[kind="primary"],
-.stButton > button[data-testid="baseButton-primary"] {
-    background: linear-gradient(135deg, var(--gs-blue), var(--gs-purple)) !important;
-    border: 1.5px solid var(--gs-blue) !important;
-    color: #FFFFFF !important;
-    box-shadow: 0 8px 20px rgba(36, 99, 235, 0.28) !important;
+.stButton > button:hover, [data-testid="stLinkButton"] a:hover {
+    transform: translateY(-1px) !important;
+    border-color: #B8C3D9 !important;
+    background: var(--surface-soft) !important;
+    color: var(--ink) !important;
+    box-shadow: var(--shadow-md) !important;
 }
 
-.stButton > button[kind="secondary"],
-.stButton > button[data-testid="baseButton-secondary"] {
-    background: #FFFFFF !important;
-    border: 1.5px solid var(--gs-border) !important;
-    color: var(--gs-blue) !important;
-    box-shadow: 0 2px 8px rgba(10,17,30,0.06) !important;
+.stButton > button[kind="primary"], .stButton > button[data-testid="baseButton-primary"] {
+    background: var(--primary) !important;
+    border-color: var(--primary) !important;
+    color: white !important;
+    box-shadow: 0 12px 24px rgba(49, 92, 246, 0.22) !important;
 }
 
-[data-testid="stLinkButton"] a {
-    border-radius: 13px !important;
-    font-weight: 850 !important;
-    border: 1.5px solid var(--gs-border) !important;
-    color: var(--gs-blue) !important;
-    background: #FFFFFF !important;
+.stButton > button[kind="primary"]:hover, .stButton > button[data-testid="baseButton-primary"]:hover {
+    background: var(--primary-hover) !important;
+    border-color: var(--primary-hover) !important;
+    color: white !important;
 }
 
 /* Inputs */
 .stTextInput input,
 .stNumberInput input,
+.stTextArea textarea,
 .stSelectbox div[data-baseweb="select"] > div,
 .stMultiSelect div[data-baseweb="select"] > div {
     background: #FFFFFF !important;
-    color: var(--gs-text) !important;
-    border-color: var(--gs-border) !important;
-    border-radius: 14px !important;
+    color: var(--ink) !important;
+    border: 1px solid var(--line-2) !important;
+    border-radius: 12px !important;
+    min-height: 2.7rem !important;
     font-size: 14px !important;
-    min-height: 2.75rem !important;
+    box-shadow: var(--shadow-sm) !important;
 }
 
-.stTextInput input::placeholder {
-    color: #64748B !important;
+.stTextInput input:focus, .stNumberInput input:focus, .stTextArea textarea:focus {
+    border-color: var(--primary) !important;
+    box-shadow: 0 0 0 3px rgba(49, 92, 246, 0.14) !important;
+    outline: none !important;
 }
 
-[data-testid="stMetricValue"] {
-    color: var(--gs-text) !important;
-    font-size: 1.12rem !important;
-    font-weight: 900 !important;
+.stTextInput input::placeholder, .stTextArea textarea::placeholder { color: #98A2B3 !important; }
+
+.stTextInput label, .stNumberInput label, .stTextArea label, .stSelectbox label, .stMultiSelect label {
+    color: var(--ink-2) !important;
+    font-size: 12px !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.035em !important;
+    text-transform: uppercase !important;
 }
 
-[data-testid="stMetricLabel"] {
-    color: var(--gs-muted) !important;
-    font-weight: 750 !important;
+/* Fix black dropdowns */
+div[data-baseweb="popover"], div[data-baseweb="popover"] > div,
+div[data-baseweb="menu"], ul[role="listbox"], [role="listbox"] {
+    background: #FFFFFF !important;
+    color: var(--ink) !important;
+    border: 1px solid var(--line) !important;
+    border-radius: 14px !important;
+    box-shadow: var(--shadow-lg) !important;
 }
 
-.stProgress > div > div > div > div {
-    background: linear-gradient(135deg, var(--gs-blue), var(--gs-purple), var(--gs-cyan)) !important;
+div[data-baseweb="menu"] li, [role="option"] {
+    background: #FFFFFF !important;
+    color: var(--ink-2) !important;
+    font-size: 14px !important;
+    padding: 10px 14px !important;
 }
 
-[data-testid="column"] {
-    min-width: 0 !important;
+div[data-baseweb="menu"] li:hover, [role="option"]:hover,
+div[data-baseweb="menu"] li[aria-selected="true"], [role="option"][aria-selected="true"] {
+    background: var(--primary-soft) !important;
+    color: var(--primary-hover) !important;
 }
 
-code, pre {
+.stMultiSelect span[data-baseweb="tag"] {
+    background: var(--primary-soft) !important;
+    color: var(--primary-hover) !important;
+    border: 1px solid #C7D7FE !important;
+    border-radius: 999px !important;
+    font-weight: 650 !important;
+}
+
+/* Slider red override */
+.stSlider [data-baseweb="slider"] div[role="slider"] {
+    background: var(--primary) !important;
+    border-color: var(--primary) !important;
+}
+.stSlider [data-baseweb="slider"] > div > div {
+    background-color: var(--primary) !important;
+}
+
+/* Metrics */
+[data-testid="stMetricLabel"] { color: var(--muted) !important; font-size: 11px !important; letter-spacing: .05em !important; text-transform: uppercase !important; font-weight: 700 !important; }
+[data-testid="stMetricValue"] { color: var(--ink) !important; font-size: 1.15rem !important; font-weight: 800 !important; }
+
+hr { border: 0 !important; border-top: 1px solid var(--line) !important; margin: 1.1rem 0 !important; opacity: 1 !important; }
+[data-testid="column"] { min-width: 0 !important; }
+
+/* Custom product components */
+.gs-repo-card, .gs-issue-card, .gs-coach-card, .gs-comment-card {
+    background: #FFFFFF;
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    box-shadow: var(--shadow-sm);
+    padding: 18px;
+    margin-bottom: 16px;
+}
+.gs-repo-card:hover, .gs-issue-card:hover, .gs-coach-card:hover { border-color: #B8C3D9; box-shadow: var(--shadow-md); }
+.gs-card-top { display:flex; align-items:flex-start; justify-content:space-between; gap:14px; margin-bottom:8px; }
+.gs-title { color: var(--ink); font-size: 16px; line-height:1.35; font-weight: 800; letter-spacing:-0.015em; margin:0; }
+.gs-desc { color: var(--ink-2); font-size: 14px; line-height:1.6; margin: 10px 0 12px; }
+.gs-meta { color: var(--muted); font-size: 12.5px; line-height:1.5; font-weight: 550; }
+.gs-match { background: var(--surface-soft); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; color: var(--ink-2); font-size: 13px; line-height: 1.45; margin-top: 12px; }
+.gs-label { color: var(--muted); font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .065em; margin-right: 7px; }
+.gs-chip { display:inline-flex; align-items:center; border-radius:999px; padding:4px 9px; font-size:12px; font-weight:700; border:1px solid var(--line); background:var(--surface-soft); color:var(--ink-2); white-space:nowrap; }
+.gs-chip-good { background: var(--success-soft); color: var(--success); border-color:#ABEFC6; }
+.gs-chip-ai { background: var(--ai-soft); color: var(--ai); border-color:#DDD6FE; }
+.gs-chip-score { background: var(--primary-soft); color: var(--primary-hover); border-color:#C7D7FE; }
+.gs-stats { display:flex; gap:16px; flex-wrap:wrap; color:var(--muted); font-size:12.5px; margin-top:12px; }
+.gs-section-grid { display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap:14px; margin-top:14px; }
+.gs-coach-card h4 { margin:0 0 8px; color:var(--ink); font-size:14.5px; font-weight:800; }
+.gs-coach-card ul { padding-left: 1.15rem; margin: 0; }
+.gs-coach-card li { margin: 6px 0; color: var(--ink-2); font-size: 14px; line-height:1.55; }
+.gs-comment-card { background: #FCFCFD; }
+.gs-comment-text { white-space: pre-wrap; color: var(--ink); font-size: 14px; line-height: 1.7; margin:0; }
+.gs-comment-text::selection, .gs-comment-card *::selection { background:#DDE7FF !important; color: var(--ink) !important; }
+.gs-empty-note { background: var(--primary-soft); border:1px solid #C7D7FE; color:var(--primary-hover); border-radius:14px; padding:13px 15px; font-weight:600; }
+
+@media (max-width: 900px) {
+    .main .block-container { padding: 1rem !important; }
+    .gs-section-grid { grid-template-columns: 1fr; }
+}
+
+
+/* ─────────────────────────────────────────────────────────────
+   FINAL UI POLISH OVERRIDES — May 29
+   Fixes: dark dropdowns, unreadable comments, crowded cards, nav weight.
+───────────────────────────────────────────────────────────── */
+:root {
+    --app-bg: #F6F7FB;
+    --card-bg: #FFFFFF;
+    --ink: #0F172A;
+    --ink-2: #27364A;
+    --muted: #475569;
+    --muted-2: #64748B;
+    --border: #DDE3EE;
+    --border-2: #C9D4E5;
+    --primary: #3457F5;
+    --primary-hover: #243FD0;
+    --primary-soft: #EEF2FF;
+    --success: #087F5B;
+    --warning: #B45309;
+    --danger: #B42318;
+}
+
+html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
+    background: var(--app-bg) !important;
+    color: var(--ink) !important;
+}
+
+.main .block-container {
+    max-width: 1420px !important;
+    padding: 1.2rem 2rem 3rem !important;
+}
+
+/* Cards should be easy to separate */
+[data-testid="stVerticalBlockBorderWrapper"] {
+    background: var(--card-bg) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 18px !important;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06) !important;
+}
+[data-testid="stVerticalBlockBorderWrapper"]:hover {
+    border-color: var(--border-2) !important;
+    box-shadow: 0 14px 36px rgba(15, 23, 42, 0.09) !important;
+}
+
+/* readable text */
+[data-testid="stMarkdownContainer"] p,
+[data-testid="stVerticalBlockBorderWrapper"] p,
+[data-testid="stVerticalBlockBorderWrapper"] div,
+[data-testid="stVerticalBlockBorderWrapper"] span {
+    color: var(--ink-2) !important;
+}
+[data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] * {
+    color: var(--muted) !important;
+    font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+    font-size: 13px !important;
+}
+
+/* top nav */
+.gs-brand-title {
+    font-size: 1.55rem;
+    font-weight: 850;
+    letter-spacing: -0.045em;
+    color: var(--ink);
+    line-height: 1.1;
+}
+.gs-brand-subtitle {
+    margin-top: 4px;
+    color: var(--muted);
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+.gs-brand-icon {
+    display: inline-grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    margin-right: 10px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #EEF2FF, #F5F3FF);
+    color: var(--primary);
+    font-weight: 900;
+    border: 1px solid #DDE3FF;
+}
+
+/* button text should not look washed out */
+.stButton > button {
+    color: var(--ink) !important;
+    font-weight: 700 !important;
+}
+.stButton > button[kind="primary"],
+.stButton > button[data-testid="baseButton-primary"] {
+    color: #FFFFFF !important;
+    background: var(--primary) !important;
+    border-color: var(--primary) !important;
+}
+.stButton > button[kind="primary"]:hover,
+.stButton > button[data-testid="baseButton-primary"]:hover {
+    background: var(--primary-hover) !important;
+    border-color: var(--primary-hover) !important;
+}
+
+/* force dropdown menus light; this fixes the black menu bug */
+div[data-baseweb="popover"],
+div[data-baseweb="menu"],
+ul[role="listbox"],
+[role="listbox"] {
+    background: #FFFFFF !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 14px !important;
+    box-shadow: 0 18px 45px rgba(15, 23, 42, 0.16) !important;
+    color: var(--ink) !important;
+}
+div[data-baseweb="menu"] *,
+ul[role="listbox"] *,
+[role="option"],
+[role="option"] * {
+    background: transparent !important;
+    color: var(--ink) !important;
+    opacity: 1 !important;
+}
+[role="option"]:hover,
+div[data-baseweb="menu"] li:hover {
+    background: var(--primary-soft) !important;
+    color: var(--primary-hover) !important;
+}
+
+/* multiselect chips calmer */
+.stMultiSelect span[data-baseweb="tag"] {
+    background: #EEF2FF !important;
+    color: #243FD0 !important;
+    border: 1px solid #C7D2FE !important;
+    border-radius: 999px !important;
+    font-weight: 700 !important;
+}
+
+/* final repo cards */
+.gs-repo-card-v2 {
+    background: #FFFFFF;
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    padding: 18px 18px 16px;
+    min-height: 360px;
+    box-shadow: 0 8px 22px rgba(15, 23, 42, 0.055);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.gs-repo-card-v2:hover {
+    border-color: #B7C5DC;
+    box-shadow: 0 16px 42px rgba(15, 23, 42, 0.10);
+    transform: translateY(-1px);
+}
+.gs-repo-title-row {
+    display:flex;
+    justify-content:space-between;
+    gap:12px;
+    align-items:flex-start;
+}
+.gs-repo-title {
+    margin:0;
+    color:var(--ink);
+    font-size:1rem;
+    line-height:1.3;
+    font-weight:850;
+    letter-spacing:-0.02em;
+    word-break:break-word;
+}
+.gs-repo-desc {
+    margin:0;
+    color:var(--ink-2);
+    font-size:0.93rem;
+    line-height:1.55;
+    min-height:66px;
+}
+.gs-overview-box {
+    background:#F8FAFC;
+    border:1px solid #E2E8F0;
+    border-radius:14px;
+    padding:12px 13px;
+    display:grid;
+    gap:9px;
+}
+.gs-overview-row {
+    display:grid;
+    grid-template-columns: 92px 1fr;
+    gap:10px;
+    align-items:start;
+}
+.gs-overview-label {
+    color:#64748B;
+    font-size:0.72rem;
+    font-weight:850;
+    text-transform:uppercase;
+    letter-spacing:0.06em;
+}
+.gs-overview-value {
+    color:#1E293B;
+    font-size:0.86rem;
+    font-weight:650;
+    line-height:1.35;
+}
+.gs-tag-row { display:flex; gap:6px; flex-wrap:wrap; }
+.gs-mini-tag {
+    border:1px solid #D7DEE9;
+    background:#FFFFFF;
+    color:#334155;
+    border-radius:999px;
+    padding:4px 8px;
+    font-size:0.75rem;
+    font-weight:700;
+}
+.gs-stats-row {
+    margin-top:auto;
+    padding-top:12px;
+    border-top:1px solid #E7ECF3;
+    display:flex;
+    gap:14px;
+    flex-wrap:wrap;
+    color:#64748B;
+    font-size:0.82rem;
+    font-weight:700;
+}
+.gs-soft-pill {
+    display:inline-flex;
+    align-items:center;
+    border-radius:999px;
+    padding:4px 9px;
+    border:1px solid #D6E4FF;
+    background:#EEF4FF;
+    color:#2448D8;
+    font-size:0.75rem;
+    font-weight:800;
+    white-space:nowrap;
+}
+
+/* issue list card */
+.gs-issue-row-card {
+    background:#FFFFFF;
+    border:1px solid var(--border);
+    border-radius:16px;
+    padding:15px 16px;
+    margin-bottom:10px;
+    box-shadow:0 6px 18px rgba(15,23,42,.045);
+}
+.gs-issue-row-card.selected {
+    border-color:#AAB8FF;
+    background:#F8FAFF;
+}
+.gs-issue-title {
+    margin:0;
+    color:var(--ink);
+    font-weight:850;
+    font-size:0.98rem;
+    line-height:1.35;
+}
+.gs-issue-meta {
+    margin-top:8px;
+    color:#64748B;
+    font-size:0.82rem;
+    font-weight:650;
+}
+.gs-fit-pill {
+    display:inline-flex;
+    border-radius:999px;
+    background:#F1F5F9;
+    border:1px solid #DDE5F0;
+    color:#334155;
+    padding:3px 8px;
+    font-size:0.75rem;
+    font-weight:850;
+}
+
+/* black comment box with native copy button */
+[data-testid="stCode"] pre {
+    background:#0B1220 !important;
+    color:#F8FAFC !important;
+    border:1px solid #1E293B !important;
+    border-radius:16px !important;
+    padding:18px !important;
+    line-height:1.65 !important;
+    font-size:13.5px !important;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.05), 0 14px 35px rgba(15,23,42,.16) !important;
+}
+[data-testid="stCode"] code {
+    color:#F8FAFC !important;
+    background:transparent !important;
+    border:none !important;
+    padding:0 !important;
+    text-shadow:none !important;
+}
+[data-testid="stCode"] button {
+    background:#111827 !important;
+    border:1px solid #334155 !important;
+    color:#FFFFFF !important;
+}
+::selection { background:#BFDBFE; color:#0F172A; }
+
+
+
+/* ─────────────────────────────────────────────────────────────
+   FINAL FEEDBACK + DROPDOWN + COACH POLISH
+───────────────────────────────────────────────────────────── */
+[role="listbox"],
+ul[role="listbox"],
+div[data-baseweb="menu"],
+div[data-baseweb="popover"],
+div[data-baseweb="popover"] > div {
+    background: #FFFFFF !important;
+    color: #0F172A !important;
+    border: 1px solid #CBD5E1 !important;
+    border-radius: 14px !important;
+    box-shadow: 0 24px 64px rgba(15, 23, 42, 0.22) !important;
+}
+[role="option"],
+[role="option"] *,
+div[data-baseweb="menu"] li,
+div[data-baseweb="menu"] li * {
+    background: #FFFFFF !important;
+    color: #0F172A !important;
+    opacity: 1 !important;
+}
+[role="option"]:hover,
+div[data-baseweb="menu"] li:hover,
+[role="option"][aria-selected="true"] {
+    background: #EEF2FF !important;
+    color: #1D4ED8 !important;
+}
+
+/* st.dialog feedback popup: light, readable, product-like */
+div[data-testid="stDialog"] div[role="dialog"],
+div[role="dialog"] {
+    background: #FFFFFF !important;
+    color: #0F172A !important;
+    border-radius: 24px !important;
+    border: 1px solid #D9E2EF !important;
+    box-shadow: 0 32px 90px rgba(15, 23, 42, 0.34) !important;
+}
+div[data-testid="stDialog"] *,
+div[role="dialog"] * {
+    color: #0F172A !important;
+}
+div[data-testid="stDialog"] label,
+div[role="dialog"] label {
+    color: #1E293B !important;
+}
+div[data-testid="stDialog"] textarea,
+div[role="dialog"] textarea {
+    background: #FFFFFF !important;
+    color: #0F172A !important;
+    border: 1px solid #CBD5E1 !important;
     border-radius: 14px !important;
 }
-
-/* v7 readability override: cards must stay white even on navy app shell */
-[data-testid="stVerticalBlockBorderWrapper"],
-[data-testid="stVerticalBlockBorderWrapper"] > div,
-[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stVerticalBlock"],
-[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stHorizontalBlock"],
-[data-testid="stVerticalBlockBorderWrapper"] [data-testid="column"] {
-    background: #FFFFFF !important;
-    color: #0A111E !important;
+.gs-feedback-kicker {
+    display:inline-flex;
+    align-items:center;
+    width:fit-content;
+    padding:5px 10px;
+    border-radius:999px;
+    background:#EEF2FF;
+    color:#1D4ED8 !important;
+    font-size:12px;
+    font-weight:800;
+    letter-spacing:.04em;
+    text-transform:uppercase;
+}
+.gs-feedback-title {
+    margin-top:12px;
+    color:#0F172A !important;
+    font-size:1.45rem;
+    line-height:1.15;
+    font-weight:850;
+    letter-spacing:-.035em;
+}
+.gs-feedback-copy {
+    margin:8px 0 0;
+    color:#475569 !important;
+    font-size:14.5px;
+    line-height:1.55;
+}
+.gs-star-help {
+    color:#334155 !important;
+    font-weight:800;
+    margin:14px 0 8px;
+}
+/* star buttons */
+div[role="dialog"] .stButton > button,
+div[data-testid="stDialog"] .stButton > button {
+    color:#0F172A !important;
 }
 
-[data-testid="stVerticalBlockBorderWrapper"] p,
-[data-testid="stVerticalBlockBorderWrapper"] span,
-[data-testid="stVerticalBlockBorderWrapper"] div,
-[data-testid="stVerticalBlockBorderWrapper"] label,
-[data-testid="stVerticalBlockBorderWrapper"] h1,
-[data-testid="stVerticalBlockBorderWrapper"] h2,
-[data-testid="stVerticalBlockBorderWrapper"] h3,
-[data-testid="stVerticalBlockBorderWrapper"] h4 {
-    color: #0A111E !important;
-}
-
-[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stCaptionContainer"],
-[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stCaptionContainer"] * {
-    color: #475569 !important;
-}
-
-
-/* FINAL CARD READABILITY OVERRIDE */
-[data-testid="stVerticalBlockBorderWrapper"],
-[data-testid="stVerticalBlockBorderWrapper"] > div,
-[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stVerticalBlock"],
-[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stHorizontalBlock"],
-[data-testid="stVerticalBlockBorderWrapper"] [data-testid="column"] {
-    background: #FFFFFF !important;
-    color: #0A111E !important;
-}
-
-[data-testid="stVerticalBlockBorderWrapper"] p,
-[data-testid="stVerticalBlockBorderWrapper"] span,
-[data-testid="stVerticalBlockBorderWrapper"] div,
-[data-testid="stVerticalBlockBorderWrapper"] label,
-[data-testid="stVerticalBlockBorderWrapper"] h1,
-[data-testid="stVerticalBlockBorderWrapper"] h2,
-[data-testid="stVerticalBlockBorderWrapper"] h3,
-[data-testid="stVerticalBlockBorderWrapper"] h4 {
-    color: #0A111E !important;
-}
-
-[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stCaptionContainer"],
-[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stCaptionContainer"] * {
-    color: #475569 !important;
-}
-
-
-/* v11: force white cards everywhere, even inside nested Streamlit blocks */
-[data-testid="stVerticalBlockBorderWrapper"],
-[data-testid="stVerticalBlockBorderWrapper"] > div,
-[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stVerticalBlock"],
-[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stHorizontalBlock"],
-[data-testid="stVerticalBlockBorderWrapper"] [data-testid="column"],
-[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stElementContainer"] {
-    background: #FFFFFF !important;
-    color: #0A111E !important;
-}
-
-[data-testid="stVerticalBlockBorderWrapper"] h1,
-[data-testid="stVerticalBlockBorderWrapper"] h2,
-[data-testid="stVerticalBlockBorderWrapper"] h3,
-[data-testid="stVerticalBlockBorderWrapper"] h4,
-[data-testid="stVerticalBlockBorderWrapper"] p,
-[data-testid="stVerticalBlockBorderWrapper"] span,
-[data-testid="stVerticalBlockBorderWrapper"] label,
-[data-testid="stVerticalBlockBorderWrapper"] div {
-    color: #0A111E !important;
-}
-
-[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stCaptionContainer"],
-[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stCaptionContainer"] * {
-    color: #475569 !important;
-}
-
-[data-testid="stVerticalBlockBorderWrapper"] textarea {
-    background: #F8FAFC !important;
-    color: #0A111E !important;
-    border: 1px solid #D6E0EF !important;
-}
-
-[data-testid="stVerticalBlockBorderWrapper"] code,
-[data-testid="stVerticalBlockBorderWrapper"] pre {
-    background: #F8FAFC !important;
-    color: #0A111E !important;
-    border: 1px solid #D6E0EF !important;
+.gs-score-pill {
+    display:inline-flex;
+    width:fit-content;
+    align-items:center;
+    gap:6px;
+    padding:5px 9px;
+    border-radius:999px;
+    background:#EEF2FF;
+    color:#1D4ED8 !important;
+    border:1px solid #C7D2FE;
+    font-size:12px;
+    font-weight:850;
+    cursor:help;
 }
 
 </style>
 """,
         unsafe_allow_html=True,
     )
+
 
 
 # ─────────────────────────────────────────────────────────────
@@ -506,6 +891,9 @@ def init_session_state() -> None:
         "show_original_issue_body": False,
         "time_available": "1-2 hours",
         "roadmap_stage": "Python → NumPy/Pandas",
+        "feedback_star_rating": 4,
+        "feedback_modal_closed": False,
+        "feedback_submitted": False,
     }
 
     for key, value in defaults.items():
@@ -634,31 +1022,76 @@ def searchable_repo_text(repo: Dict[str, Any]) -> str:
 
 
 def infer_best_for(repo: Dict[str, Any]) -> str:
-    text = searchable_repo_text(repo)
+    text = searchable_repo_text(repo).lower()
 
+    # AI/ML Specifics
     if any(word in text for word in ["nlp", "language model", "transformer", "huggingface", "tokenizer", "llm"]):
         return "NLP / LLMs"
     if any(word in text for word in ["vision", "image", "opencv", "ocr", "segmentation", "detection"]):
         return "Computer Vision"
     if any(word in text for word in ["pandas", "numpy", "preprocess", "data clean", "dataset"]):
-        return "Data preprocessing"
+        return "Data Science"
     if any(word in text for word in ["sklearn", "scikit", "classification", "regression", "clustering"]):
         return "Classical ML"
     if any(word in text for word in ["pytorch", "tensorflow", "keras", "deep learning", "neural"]):
         return "Deep Learning"
+
+    # Web & Mobile
+    if any(word in text for word in ["react", "vue", "nextjs", "angular", "tailwind", "frontend", "svelte", "html", "css"]):
+        return "Frontend Web Dev"
+    if any(word in text for word in ["django", "flask", "fastapi", "express", "nodejs", "spring", "rails", "graphql", "rest api", "backend"]):
+        return "Backend Dev"
+    if any(word in text for word in ["flutter", "react native", "swift", "kotlin", "android", "ios", "mobile"]):
+        return "Mobile App Dev"
+
+    # DevOps, Systems, Databases
+    if any(word in text for word in ["docker", "kubernetes", "ansible", "terraform", "aws", "gcp", "azure", "ci/cd", "devops", "cloud"]):
+        return "Cloud / DevOps"
+    if any(word in text for word in ["rust", "golang", "c++", "kernel", "systems", "embedded", "assembler"]):
+        return "Systems / Tools"
+    if any(word in text for word in ["sql", "postgresql", "mongodb", "mysql", "redis", "database", "query"]):
+        return "Databases"
+
+    # Docs / General
     if any(word in text for word in ["doc", "readme", "tutorial", "example"]):
         return "Docs / Examples"
-    if "python" in text:
-        return "Python beginners"
-    return "AI/ML beginners"
+
+    lang = str(repo.get("language") or "").strip()
+    if lang:
+        return f"{lang} Projects"
+
+    return "General Development"
 
 
 def infer_required_skills(repo: Dict[str, Any]) -> List[str]:
-    text = searchable_repo_text(repo)
+    text = searchable_repo_text(repo).lower()
     skills = []
 
-    if "python" in text or repo.get("language") == "Python":
+    lang = str(repo.get("language") or "").strip()
+    if lang:
+        skills.append(lang)
+
+    # General languages if not explicitly set
+    if "python" in text and "Python" not in skills:
         skills.append("Python")
+    if ("javascript" in text or " js" in text or "node" in text) and "JavaScript" not in skills:
+        skills.append("JavaScript")
+    if ("typescript" in text or " ts" in text) and "TypeScript" not in skills:
+        skills.append("TypeScript")
+    if "rust" in text and "Rust" not in skills:
+        skills.append("Rust")
+    if "golang" in text and "Go" not in skills:
+        skills.append("Go")
+
+    # Frameworks / Tools
+    if "react" in text:
+        skills.append("React")
+    if "vue" in text:
+        skills.append("Vue")
+    if "node" in text:
+        skills.append("Node.js")
+    if "docker" in text:
+        skills.append("Docker")
     if "numpy" in text:
         skills.append("NumPy")
     if "pandas" in text:
@@ -667,24 +1100,34 @@ def infer_required_skills(repo: Dict[str, Any]) -> List[str]:
         skills.append("Scikit-learn")
     if "pytorch" in text:
         skills.append("PyTorch")
-    if "tensorflow" in text or "keras" in text:
-        skills.append("TensorFlow")
     if any(word in text for word in ["doc", "readme", "tutorial"]):
         skills.append("Docs")
 
-    return skills[:4] or ["Python", "GitHub basics"]
+    # Remove duplicates preserving order
+    unique_skills = []
+    for s in skills:
+        if s not in unique_skills:
+            unique_skills.append(s)
+
+    return unique_skills[:4] or [lang or "Git", "GitHub"]
 
 
 def infer_contribution_fit(repo: Dict[str, Any]) -> str:
-    text = searchable_repo_text(repo)
+    text = searchable_repo_text(repo).lower()
     difficulty = str(repo.get("difficulty", "")).lower()
     good_first = int(repo.get("good_first_issues", 0) or 0)
 
     if good_first > 0 or "beginner" in difficulty or "good first issue" in text:
         return "Beginner friendly"
 
-    if any(word in text for word in ["pytorch", "tensorflow", "deep learning", "cuda", "compiler"]):
+    if any(word in text for word in ["pytorch", "tensorflow", "deep learning", "cuda", "neural"]):
         return "Needs ML basics"
+
+    if any(word in text for word in ["react", "nextjs", "angular", "vue", "frontend"]):
+        return "Needs Web basics"
+
+    if any(word in text for word in ["rust", "c++", "kernel", "systems", "assembly"]):
+        return "Needs Systems basics"
 
     return "Beginner possible"
 
@@ -720,18 +1163,24 @@ def github_stat(value: Any) -> str:
 
 def dynamic_repo_reasons(repo: Dict[str, Any]) -> List[str]:
     tags = get_repo_tags(repo)
-    language = str(repo.get("language") or "").lower()
+    language = str(repo.get("language") or "").strip()
     skills = infer_required_skills(repo)
     fit = infer_contribution_fit(repo)
     open_issues = repo.get("open_issues") or repo.get("open_issues_count") or 0
 
     reasons = []
 
-    if "Python" in skills or language == "python":
-        reasons.append("Uses Python, which matches the AI/ML beginner path.")
+    if language:
+        reasons.append(f"Uses {language}, which matches your language filters.")
+    elif "Python" in skills:
+        reasons.append("Uses Python, matching standard developer workflows.")
 
     if fit == "Beginner friendly":
         reasons.append("Looks beginner-friendly based on labels, tags, or difficulty.")
+    elif fit == "Needs Web basics":
+        reasons.append("Great project to practice web development basics.")
+    elif fit == "Needs ML basics":
+        reasons.append("Perfect candidate for building practical machine learning experience.")
 
     if open_issues and int(open_issues) > 0:
         reasons.append(f"Has {open_issues} open issues to explore.")
@@ -841,19 +1290,39 @@ CURATED_AI_ML_REPOS = [
 
 
 
-DOMAIN_OPTIONS = ["AI/ML", "Web Development", "Backend", "Cybersecurity", "DevOps", "Mobile", "Data Science", "Blockchain"]
+DOMAIN_OPTIONS = [
+    "AI/ML", "Web Development", "Backend", "Cybersecurity", "DevOps", "Mobile",
+    "Data Science", "Blockchain", "Docs", "Testing", "UI/UX", "Databases",
+    "Cloud", "Automation", "CLI Tools", "Developer Tools"
+]
+
 DOMAIN_TECH_STACKS = {
-    "AI/ML": ["Python", "NumPy", "Pandas", "Scikit-learn", "PyTorch", "TensorFlow", "Keras", "NLP", "Computer Vision", "FastAPI", "MLOps", "Jupyter", "Data preprocessing"],
-    "Web Development": ["React", "Next.js", "TypeScript", "JavaScript", "Tailwind", "HTML", "CSS", "Vue", "Svelte"],
-    "Backend": ["Python", "FastAPI", "Node.js", "Express", "Django", "Flask", "PostgreSQL", "MongoDB", "Redis", "RabbitMQ"],
-    "Cybersecurity": ["Security", "Auth", "OWASP", "JWT", "OAuth", "Encryption", "Python", "Go"],
-    "DevOps": ["Docker", "Kubernetes", "CI/CD", "GitHub Actions", "Terraform", "Prometheus", "Grafana", "MLOps"],
-    "Mobile": ["React Native", "Flutter", "Android", "Kotlin", "Swift", "iOS"],
-    "Data Science": ["Python", "Pandas", "NumPy", "Jupyter", "Matplotlib", "Visualization", "ETL"],
-    "Blockchain": ["Solidity", "Web3", "The Graph", "Smart contracts", "Ethereum", "Hardhat"],
+    "AI/ML": ["Machine Learning", "Deep Learning", "NLP", "Computer Vision", "PyTorch", "TensorFlow", "Scikit-learn", "Pandas", "NumPy", "Jupyter", "MLOps", "Keras", "Transformers", "Reinforcement Learning"],
+    "Web Development": ["React", "Next.js", "Vue", "Angular", "TypeScript", "JavaScript", "Tailwind CSS", "CSS", "HTML", "Svelte", "Nuxt", "Web3.js", "Webpack", "Frontend"],
+    "Backend": ["Python", "FastAPI", "Django", "Flask", "Node.js", "Express", "Java", "Spring Boot", "Go", "Rust", "PostgreSQL", "MongoDB", "API", "REST"],
+    "Cybersecurity": ["Security", "Encryption", "Authentication", "JWT", "OAuth", "OWASP", "Penetration Testing", "Network Security", "Zero Trust", "Cryptography", "Python", "Go"],
+    "DevOps": ["Docker", "Kubernetes", "CI/CD", "GitHub Actions", "Terraform", "Prometheus", "Grafana", "Jenkins", "CloudFormation", "Monitoring", "Infrastructure as Code"],
+    "Mobile": ["React Native", "Flutter", "Swift", "Kotlin", "iOS", "Android", "Cross-platform", "Native", "Mobile UI"],
+    "Data Science": ["Pandas", "NumPy", "Matplotlib", "Jupyter", "Data Visualization", "ETL", "Data Engineering", "Statistics", "Scikit-learn", "SQL"],
+    "Blockchain": ["Solidity", "Web3", "Smart Contracts", "Ethereum", "Rust", "Go", "The Graph", "Hardhat", "Truffle", "DeFi"],
+    "Docs": ["Documentation", "Markdown", "MDX", "Docusaurus", "Sphinx", "API Docs", "Examples", "Tutorials", "Technical Writing"],
+    "Testing": ["Testing", "Jest", "PyTest", "Unit Testing", "Integration Testing", "E2E", "Cypress", "Selenium", "Test Framework"],
+    "UI/UX": ["React", "TypeScript", "CSS", "Design System", "Accessibility", "HTML", "Storybook", "Figma", "Component Library", "CSS Framework"],
+    "Databases": ["PostgreSQL", "MongoDB", "Redis", "MySQL", "Elasticsearch", "DynamoDB", "Database Design", "SQL", "Migrations"],
+    "Cloud": ["AWS", "Google Cloud", "Azure", "Kubernetes", "Docker", "Deployment", "Cloud Native", "Serverless", "Lambda"],
+    "Automation": ["Python", "JavaScript", "Bash", "Scripting", "Automation", "Workflow", "CI/CD", "Task Automation", "RPA"],
+    "CLI Tools": ["CLI", "Command Line", "Go", "Rust", "Python", "Shell", "TypeScript", "Command Line Interface", "Terminal"],
+    "Developer Tools": ["Developer Tools", "IDE", "Build Tools", "Compiler", "Debugger", "Code Generation", "Linter", "Formatter", "Testing Tools"],
 }
+
 LEVEL_OPTIONS = ["Beginner Friendly", "Intermediate", "Advanced"]
-LANGUAGE_OPTIONS = ["Python", "JavaScript", "TypeScript", "Java", "C++", "Go", "Rust", "HTML/CSS", "Kotlin", "Swift", "Solidity", "PHP", "Ruby"]
+
+LANGUAGE_OPTIONS = [
+    "Python", "JavaScript", "TypeScript", "Java", "C", "C++", "Go", "Rust",
+    "Kotlin", "Swift", "PHP", "Ruby", "C#", "HTML/CSS", "SQL", "Solidity",
+    "Shell", "Dart", "Scala"
+]
+
 SORT_OPTIONS = ["Best match", "Most Good First Issues", "Most Open Issues", "Recently Updated", "Beginner Friendly First", "Name A-Z"]
 
 STARTER_AI_ML_QUERIES = [
@@ -1048,11 +1517,29 @@ def local_issue_score(issue: Dict[str, Any]) -> float:
 
 
 def score_badge(score: int) -> str:
-    if score >= 80:
-        return f"🟢 {score}"
-    if score >= 55:
-        return f"🟠 {score}"
-    return f"🔴 {score}"
+    """Clean numeric score. No red/orange emoji dots."""
+    try:
+        value = int(score)
+    except (TypeError, ValueError):
+        value = 0
+    return f"{value}/100"
+
+
+def score_label(score: int) -> str:
+    try:
+        value = int(score)
+    except (TypeError, ValueError):
+        value = 0
+    if value >= 75:
+        return "Strong fit"
+    if value >= 55:
+        return "Good fit"
+    return "Candidate"
+
+
+def _h(value: Any) -> str:
+    """Small HTML escape helper for custom cards."""
+    return html.escape(str(value or ""), quote=True)
 
 
 def issue_key(issue: Dict[str, Any]) -> str:
@@ -1166,13 +1653,21 @@ def project_matches_filters(
 
     domain_terms = {
         "AI/ML": ["ai", "ml", "machine", "learning", "python", "data", "model", "nlp", "vision", "pytorch", "tensorflow"],
-        "Web Development": ["react", "next", "frontend", "web", "javascript", "typescript", "html", "css"],
-        "Backend": ["backend", "api", "server", "fastapi", "django", "flask", "node", "database"],
-        "Cybersecurity": ["security", "auth", "owasp", "cyber", "jwt", "oauth", "encryption", "vulnerability"],
-        "DevOps": ["devops", "docker", "kubernetes", "ci", "deploy", "terraform", "monitoring"],
+        "Web Development": ["react", "next", "frontend", "web", "javascript", "typescript", "html", "css", "vue", "angular"],
+        "Backend": ["backend", "api", "server", "fastapi", "django", "flask", "node", "database", "express", "spring"],
+        "Cybersecurity": ["security", "auth", "owasp", "cyber", "jwt", "oauth", "encryption", "vulnerability", "penetration"],
+        "DevOps": ["devops", "docker", "kubernetes", "ci", "deploy", "terraform", "monitoring", "infrastructure"],
         "Mobile": ["mobile", "android", "flutter", "react native", "ios", "kotlin", "swift"],
-        "Data Science": ["data", "pandas", "numpy", "jupyter", "visualization", "analytics", "etl"],
-        "Blockchain": ["blockchain", "solidity", "web3", "smart contract", "graph", "ethereum"],
+        "Data Science": ["data", "pandas", "numpy", "jupyter", "visualization", "analytics", "etl", "engineering"],
+        "Blockchain": ["blockchain", "solidity", "web3", "smart contract", "graph", "ethereum", "defi"],
+        "Docs": ["documentation", "docs", "tutorial", "guide", "markdown", "docusaurus"],
+        "Testing": ["testing", "test", "jest", "pytest", "e2e", "cypress", "selenium"],
+        "UI/UX": ["ui", "ux", "design", "component", "storybook", "accessibility", "figma"],
+        "Databases": ["database", "postgresql", "mongodb", "redis", "mysql", "elasticsearch"],
+        "Cloud": ["cloud", "aws", "gcp", "azure", "kubernetes", "serverless"],
+        "Automation": ["automation", "script", "workflow", "rpa", "task"],
+        "CLI Tools": ["cli", "command", "terminal", "tool", "go", "rust"],
+        "Developer Tools": ["tool", "ide", "build", "compiler", "debugger", "linter"],
     }
 
     # Domain is the main intent. It should match at least one domain signal,
@@ -1221,6 +1716,72 @@ def curated_projects(keywords: str = "", tech_stack: Any = "", language: Any = "
     return [dict(repo) for repo in CURATED_AI_ML_REPOS if project_matches_filters(repo, keywords, tech_stack, language, difficulty, domain)]
 
 
+def score_repo_match(repo: Dict[str, Any], keywords: str = "", domain: str = "", languages: Optional[List[str]] = None, tech_stacks: Optional[List[str]] = None) -> float:
+    """Score how well a repo matches the search criteria for ranking."""
+    score = 0.0
+    languages = languages or []
+    tech_stacks = tech_stacks or []
+    
+    # Curated repos get highest priority
+    if repo.get("is_curated"):
+        score += 100
+    
+    # Source priority: GitHub from domain search > GitHub general > GSSoC
+    if repo.get("is_github_search"):
+        score += 50
+    if repo.get("is_gssoc"):
+        score += 30
+    
+    # Stars (normalized, max +30)
+    stars = int(repo.get("stars", 0) or 0)
+    score += min(30, stars / 500)
+    
+    # Open issues (indicator of activity, max +20)
+    open_issues = int(repo.get("open_issues", 0) or 0) + int(repo.get("good_first_issues", 0) or 0)
+    score += min(20, open_issues / 50)
+    
+    # Keyword matches in repo text
+    if keywords:
+        text = searchable_repo_text(repo).lower()
+        words = [w.strip().lower() for w in str(keywords).replace(",", " ").split() if w.strip()]
+        for word in words:
+            if len(word) > 1 and word in text:
+                score += 5
+    
+    # Language match (exact match or topic match)
+    if languages:
+        repo_lang = str(repo.get("language", "")).lower()
+        for lang in languages:
+            if repo_lang == lang.lower() or lang.lower() in searchable_repo_text(repo).lower():
+                score += 10
+                break
+    
+    # Tech stack match
+    if tech_stacks:
+        combined_text = searchable_repo_text(repo).lower()
+        for stack in tech_stacks:
+            if str(stack).lower() in combined_text:
+                score += 8
+    
+    # Recency bonus (updated recently is good)
+    try:
+        updated_at = repo.get("updated_at", "")
+        if updated_at:
+            from datetime import datetime, timezone
+            updated = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
+            days_old = (datetime.now(timezone.utc) - updated).days
+            if days_old < 30:
+                score += 15
+            elif days_old < 90:
+                score += 10
+            elif days_old < 365:
+                score += 5
+    except Exception:
+        pass
+    
+    return score
+
+
 def unique_projects(projects: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     seen = set()
     unique = []
@@ -1234,6 +1795,23 @@ def unique_projects(projects: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return unique
 
 
+def rank_search_results(projects: List[Dict[str, Any]], domain: str = "", keywords: str = "", languages: Optional[List[str]] = None, tech_stacks: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+    """Rank projects by relevance to search criteria."""
+    languages = languages or []
+    tech_stacks = tech_stacks or []
+    
+    # Score each project
+    scored = []
+    for project in projects:
+        score = score_repo_match(project, keywords=keywords, domain=domain, languages=languages, tech_stacks=tech_stacks)
+        scored.append((score, project))
+    
+    # Sort by score descending (highest scores first), then by stars
+    scored.sort(key=lambda x: (x[0], x[1].get("stars", 0)), reverse=True)
+    
+    return [project for _, project in scored]
+
+
 def search_projects() -> None:
     try:
         keywords = st.session_state.repo_search_text or st.session_state.keywords or ""
@@ -1243,6 +1821,7 @@ def search_projects() -> None:
         difficulty = st.session_state.difficulty or ""
 
         with st.spinner(f"Searching {domain} repositories..."):
+            # Gather results from all sources
             curated = curated_projects(
                 keywords=keywords,
                 tech_stack=tech_stack,
@@ -1250,8 +1829,11 @@ def search_projects() -> None:
                 difficulty=difficulty,
                 domain=domain,
             )
+            # Mark curated repos so they rank higher
+            for repo in curated:
+                repo["is_curated"] = True
 
-            # For GSSoC, use one language hint only, then do real OR filtering locally.
+            # GSSoC search (optional source, not primary)
             backend_language = languages[0] if languages else ""
             gssoc = cached_search_projects(
                 keywords=" ".join([keywords, domain] + tech_stack),
@@ -1265,7 +1847,7 @@ def search_projects() -> None:
                 if project_matches_filters(repo, keywords, tech_stack, languages, difficulty, domain)
             ]
 
-            # GitHub client now performs OR search by running multiple small queries.
+            # GitHub search is primary for all domains
             github = cached_github_repo_search(
                 keywords=keywords,
                 domain=domain,
@@ -1278,9 +1860,20 @@ def search_projects() -> None:
                 if project_matches_filters(repo, keywords, tech_stack, languages, difficulty, domain)
             ]
 
-            combined = unique_projects(curated + gssoc + github)
+            # Combine results: curated > github > gssoc (order matters for initial rank)
+            combined = unique_projects(curated + github + gssoc)
+            
+            # Rank by relevance
+            combined = rank_search_results(
+                combined,
+                domain=domain,
+                keywords=keywords,
+                languages=languages,
+                tech_stacks=tech_stack
+            )
 
             if not combined:
+                # Fallback: broad search by domain only
                 fallback = cached_github_repo_search(
                     keywords=domain,
                     domain=domain,
@@ -1289,6 +1882,7 @@ def search_projects() -> None:
                     sort_by="Best match",
                 )
                 combined = unique_projects(fallback)
+                combined = rank_search_results(combined, domain=domain)
 
             st.session_state.repo_results = combined[:18]
 
@@ -1307,6 +1901,9 @@ def load_default_repos_once(force_refresh: bool = False) -> None:
     try:
         with st.spinner(f"Loading starter repositories for: {query}"):
             curated = curated_projects(keywords="", tech_stack=[], language=["Python"], difficulty="", domain="AI/ML")
+            for repo in curated:
+                repo["is_curated"] = True
+                
             github = cached_github_repo_search(
                 keywords=query,
                 domain="AI/ML",
@@ -1316,14 +1913,20 @@ def load_default_repos_once(force_refresh: bool = False) -> None:
             )
             gssoc = cached_search_projects(keywords=query, tech_stack="", language="Python", difficulty="", sort_by=DEFAULT_SORT)
             gssoc = [repo for repo in gssoc if project_matches_filters(repo, query, [], ["Python"], "", "AI/ML")]
-            st.session_state.repo_results = unique_projects(curated + gssoc + github)[:18]
+            
+            combined = unique_projects(curated + github + gssoc)
+            combined = rank_search_results(combined, domain="AI/ML", keywords=query, languages=["Python"])
+            st.session_state.repo_results = combined[:18]
 
         st.session_state.keywords = ""
         st.session_state.hero_keywords = ""
         st.session_state.repo_search_text = ""
         st.session_state.default_repos_loaded = True
     except Exception:
-        st.session_state.repo_results = curated_projects(domain="AI/ML", language=["Python"])[:12]
+        curated = curated_projects(domain="AI/ML", language=["Python"])
+        for repo in curated:
+            repo["is_curated"] = True
+        st.session_state.repo_results = curated[:12]
         st.session_state.default_repos_loaded = True
 
 
@@ -1479,6 +2082,101 @@ def extract_issue_section(body: str, headings: List[str], stop_headings: Optiona
     return ""
 
 
+def _issue_full_body(issue: Dict[str, Any]) -> str:
+    """Return the longest available issue text so the coach does not only read the preview."""
+    candidates = [
+        issue.get("body"),
+        issue.get("full_body"),
+        issue.get("description"),
+        issue.get("raw_body"),
+        issue.get("summary"),
+    ]
+    clean = [strip_markdown(x) for x in candidates if str(x or "").strip()]
+    return max(clean, key=len) if clean else ""
+
+
+def _sentences_from_text(text: str, limit: int = 18) -> List[str]:
+    text = strip_markdown(text)
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return []
+    pieces = re.split(r"(?<=[.!?])\s+", text)
+    cleaned = []
+    for piece in pieces:
+        piece = piece.strip(" -•\t\n")
+        if 35 <= len(piece) <= 280:
+            cleaned.append(piece)
+    return cleaned[:limit]
+
+
+def _pick_sentences(text: str, keywords: List[str], fallback_count: int = 2) -> List[str]:
+    sentences = _sentences_from_text(text, limit=28)
+    hits = []
+    for sentence in sentences:
+        low = sentence.lower()
+        if any(k in low for k in keywords):
+            hits.append(sentence)
+    if hits:
+        return hits[:3]
+    return sentences[:fallback_count]
+
+
+def _is_weak_ai_value(value: Any) -> bool:
+    text = " ".join(value) if isinstance(value, list) else strip_markdown(value)
+    low = text.lower().strip()
+    if not low:
+        return True
+    weak_phrases = [
+        "check the issue body",
+        "read the issue body",
+        "identify the requested change",
+        "make a small focused pr",
+        "generate ai breakdown",
+        "not confidently detected",
+        "open the issue on github",
+    ]
+    return len(low) < 45 or any(p in low for p in weak_phrases)
+
+
+def strengthen_issue_breakdown(issue: Dict[str, Any]) -> Dict[str, Any]:
+    """Use the full issue body to replace generic AI/fallback lines with useful insight."""
+    body = _issue_full_body(issue)
+    title = strip_markdown(issue.get("title", "this issue"))
+    full = f"{title}. {body}".strip()
+    if not body:
+        return issue
+
+    local = local_issue_breakdown({**issue, "body": body})
+    problem_lines = _pick_sentences(
+        full,
+        ["problem", "currently", "fails", "error", "bug", "cannot", "can't", "does not", "missing", "lacks", "unable", "issue", "bottleneck"],
+    )
+    change_lines = _pick_sentences(
+        full,
+        ["proposed", "expected", "add", "implement", "create", "update", "fix", "support", "allow", "ensure", "should", "need", "needs", "acceptance"],
+    )
+    approach_lines = _pick_sentences(
+        full,
+        ["file", "module", "component", "api", "backend", "frontend", "test", "readme", "config", "route", "service", "function"],
+        fallback_count=3,
+    )
+
+    strengthened = dict(issue)
+    replacements = {
+        "core_problem": problem_lines or local.get("core_problem"),
+        "expected_change": change_lines or local.get("expected_change"),
+        "what_to_do": local.get("what_to_do") or approach_lines,
+        "files_likely_needed": local.get("files_likely_needed"),
+        "first_step": local.get("first_step"),
+        "step_by_step_plan": local.get("step_by_step_plan"),
+        "risks_or_unknowns": local.get("risks_or_unknowns"),
+    }
+    for key, replacement in replacements.items():
+        if _is_weak_ai_value(strengthened.get(key)) and replacement:
+            strengthened[key] = replacement
+    return strengthened
+
+
 def local_issue_breakdown(issue: Dict[str, Any], error: Optional[Exception] = None) -> Dict[str, Any]:
     """Create a useful issue explanation without AI.
 
@@ -1486,7 +2184,7 @@ def local_issue_breakdown(issue: Dict[str, Any], error: Optional[Exception] = No
     still feel like a coach, not like copied issue text.
     """
     title = strip_markdown(issue.get("title", "this issue"))
-    body = strip_markdown(issue.get("body", "") or issue.get("summary", ""))
+    body = _issue_full_body(issue)
     lower = f"{title} {body}".lower()
 
     issue_type = infer_issue_type(issue)
@@ -1601,27 +2299,29 @@ def local_issue_breakdown(issue: Dict[str, Any], error: Optional[Exception] = No
     else:
         problem = (
             extract_issue_section(body, ["Problem", "Description", "Motivation", "Current behavior", "Current Performance Bottleneck"])
-            or body[:500]
+            or " ".join(_pick_sentences(body, ["problem", "currently", "fails", "error", "cannot", "does not", "missing", "lacks", "unable"], fallback_count=2))
+            or body[:650]
             or title
         )
         expected = (
-            extract_issue_section(body, ["Proposed Solution", "Proposed Changes", "Expected behavior", "Expected Behavior", "Acceptance Criteria"])
+            extract_issue_section(body, ["Proposed Solution", "Proposed Changes", "Expected behavior", "Expected Behavior", "Acceptance Criteria", "Tasks"])
+            or " ".join(_pick_sentences(body, ["add", "implement", "create", "update", "fix", "support", "allow", "ensure", "should", "need", "expected", "proposed"], fallback_count=2))
             or f"Make a focused change that resolves the request in: {title}"
         )
 
         core_problem = [
-            problem[:420],
-            "The current project behavior or documentation does not fully cover what the issue is asking for.",
+            problem[:520],
+            "GitScout extracted this from the full issue body, not only the title or first preview line.",
         ]
         expected_change = [
-            expected[:420],
-            "The PR should stay focused on this issue and avoid unrelated refactors.",
+            expected[:520],
+            "Keep the PR focused on this requested behavior and avoid unrelated refactors.",
         ]
         what_to_do = [
-            "Read the full issue body and separate the problem from the proposed solution.",
-            "Find the files or folders related to the affected feature.",
-            "Reproduce or inspect the current behavior before editing.",
-            "Make the smallest focused change that satisfies the expected behavior.",
+            "Read the complete issue body and mark the exact requested outcome.",
+            "Search the repository for the feature, module, route, component, or docs area mentioned in the issue.",
+            "Inspect the current behavior before editing so your PR fixes the real gap.",
+            "Make a small focused change and include validation notes, screenshots, or tests when relevant.",
         ]
         likely_files = []
         if "readme" in lower or issue_type == "Docs":
@@ -1750,13 +2450,22 @@ def generate_ai_breakdown_for_selected() -> None:
 # ─────────────────────────────────────────────────────────────
 # NAVIGATION
 # ─────────────────────────────────────────────────────────────
-
 def render_nav() -> None:
     with st.container(border=True):
-        brand_col, nav_col = st.columns([2.2, 3.2])
+        brand_col, nav_col = st.columns([2.4, 3.1])
         with brand_col:
-            st.markdown("## ✦ GitScout AI")
-            st.caption("Open-source issue coach")
+            st.markdown(
+                """
+                <div style="display:flex; align-items:center; padding:4px 0 2px;">
+                    <div class="gs-brand-icon">G</div>
+                    <div>
+                        <div class="gs-brand-title">GitScout AI</div>
+                        <div class="gs-brand-subtitle">open-source contribution coach</div>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
         with nav_col:
             c1, c2, c3, c4, c5 = st.columns(5)
             with c1:
@@ -1772,14 +2481,10 @@ def render_nav() -> None:
                 if st.button("Comment", key="nav_comment", type="primary" if st.session_state.page == "comment" else "secondary", use_container_width=True):
                     go("comment")
             with c5:
-                if st.button(f"My Path ({len(st.session_state.saved_issues)})", key="nav_saved", type="primary" if st.session_state.page == "saved" else "secondary", use_container_width=True):
+                if st.button(f"Saved ({len(st.session_state.saved_issues)})", key="nav_saved", type="primary" if st.session_state.page == "saved" else "secondary", use_container_width=True):
                     go("saved")
     st.divider()
 
-
-# ─────────────────────────────────────────────────────────────
-# DISCOVER PAGE
-# ─────────────────────────────────────────────────────────────
 
 def render_skill_matcher() -> None:
     with st.container(border=True):
@@ -1825,66 +2530,87 @@ def render_skill_matcher() -> None:
 def render_repo_refine_panel() -> None:
     st.info("Repository filters are now on the main Discover page.")
 
-
 def render_repo_card(repo: Dict[str, Any], idx: int) -> None:
+    """Readable repository card using Streamlit components only.
+
+    This avoids raw HTML showing in the UI and keeps keys unique even when
+    GitHub returns duplicate repos.
+    """
     url = repo_url(repo)
     display_name = get_repo_display_name(repo)
+    summary = truncate(repo.get("summary") or repo.get("description"), 190)
     tags = get_repo_tags(repo)
-    summary = truncate(repo.get("summary") or repo.get("description"), 150)
 
     best_for = infer_best_for(repo)
     required = infer_required_skills(repo)
     fit = infer_contribution_fit(repo)
     work = infer_available_work(repo)
+    matched_str = match_summary(
+        repo,
+        st.session_state.domain_filter,
+        st.session_state.language or [],
+        st.session_state.tech_stack or [],
+    )
 
     stars = github_stat(repo.get("stars"))
     forks = github_stat(repo.get("forks"))
     open_issues = github_stat(repo.get("open_issues") or repo.get("open_issues_count"))
+    lang = str(repo.get("language") or "").strip() or "Unknown"
+    unique = safe_key(f"{idx}-{display_name}-{url}")
 
     with st.container(border=True):
-        h1, h2 = st.columns([0.16, 0.84])
-
-        with h1:
-            st.markdown(f"### {display_name[:1].upper()}")
-
-        with h2:
-            st.markdown(f"**`{display_name}`**")
-            st.caption(f"{fit} · {best_for}")
+        top_l, top_r = st.columns([4, 1])
+        with top_l:
+            st.markdown(f"**{display_name}**")
+        with top_r:
+            if repo.get("is_curated"):
+                st.caption("Curated")
+            elif repo.get("is_github_search"):
+                st.caption("GitHub")
+            else:
+                st.caption(lang)
 
         st.write(summary)
-        st.caption(f"Best for: {best_for}")
-        st.caption(f"Required: {' · '.join(required)}")
-        st.caption(f"Work: {' · '.join(work)}")
 
-        st.caption(
-            "Matched: "
-            + match_summary(
-                repo,
-                st.session_state.domain_filter,
-                st.session_state.language or [],
-                st.session_state.tech_stack or [],
-            )
-        )
+        with st.container(border=True):
+            st.caption("Overview")
+            r1, r2 = st.columns([1, 2.3])
+            with r1:
+                st.caption("BEST FOR")
+            with r2:
+                st.write(best_for)
+            r3, r4 = st.columns([1, 2.3])
+            with r3:
+                st.caption("REQUIRED")
+            with r4:
+                st.write(" · ".join(required[:4]))
+            r5, r6 = st.columns([1, 2.3])
+            with r5:
+                st.caption("WORK")
+            with r6:
+                st.write(" · ".join(work[:4]))
+            r7, r8 = st.columns([1, 2.3])
+            with r7:
+                st.caption("MATCHED")
+            with r8:
+                st.write(matched_str)
 
         if tags:
-            st.caption("Tags: " + " · ".join(tags[:4]))
+            st.caption(" · ".join([lang] + tags[:3]))
 
-        st.divider()
-
-        if any(value != "—" for value in [stars, forks, open_issues]):
-            m1, m2, m3 = st.columns(3)
-            m1.caption(f"⭐ {stars}")
-            m2.caption(f"🍴 {forks}")
-            m3.caption(f"💬 {open_issues} issues")
-        else:
-            st.caption("GitHub stats load on the project page.")
+        stat_parts = []
+        if stars != "—":
+            stat_parts.append(f"★ {stars}")
+        if forks != "—":
+            stat_parts.append(f"⑂ {forks}")
+        if open_issues != "—":
+            stat_parts.append(f"◎ {open_issues} issues")
+        st.caption(" · ".join(stat_parts) if stat_parts else "GitHub stats load on the project page.")
 
         b1, b2 = st.columns(2)
-
         with b1:
-            if st.button("View Project →", key=f"view_repo_{idx}_{safe_key(display_name)}", type="primary", use_container_width=True):
+            if st.button("View Project →", key=f"view_repo_{idx}_{unique}", type="primary", use_container_width=True):
                 select_repo_for_project(repo)
-
         with b2:
             st.link_button("GitHub ↗", url, use_container_width=True)
 
@@ -2105,42 +2831,44 @@ def render_issue_refine_panel() -> None:
 
 
 def render_issue_list_item(issue: Dict[str, Any], idx: int) -> None:
+    """Compact left-side issue card; stays aligned and readable."""
     selected = idx == st.session_state.selected_issue_idx
-    score = int(issue.get("fast_score", 0))
-    summary = truncate(issue.get("summary") or issue.get("body") or issue.get("title"), 135)
+    score = int(issue.get("fast_score", 0) or 0)
+    summary = truncate(issue.get("summary") or issue.get("body") or issue.get("title"), 130)
     competition = issue.get("competition_level") or issue.get("competition", "N/A")
     saved = is_issue_saved(issue)
+    title = strip_markdown(issue.get("title", "Untitled issue"))
+    issue_type = issue.get("issue_type", "General")
+    comments = issue.get("comments", 0)
+    required = issue.get("required_knowledge", "Python only")
+    selected_class = " selected" if selected else ""
+    selected_badge = '<span class="gs-fit-pill">Selected</span>' if selected else ''
 
-    with st.container(border=True):
-        c1, c2 = st.columns([0.14, 0.86])
+    st.markdown(
+        f"""
+        <div class="gs-issue-row-card{selected_class}">
+            <div style="display:flex; justify-content:space-between; gap:12px; align-items:flex-start;">
+                <h3 class="gs-issue-title">{_h(title)}</h3>
+                <div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;">{selected_badge}<span class="gs-fit-pill">Fit {_h(score)}/100</span></div>
+            </div>
+            <p class="gs-repo-desc" style="min-height:auto; margin-top:10px;">{_h(summary)}</p>
+            <div class="gs-issue-meta">{_h(issue_type)} · {_h(required)} · {_h(comments)} comments · {_h(competition)} competition</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-        with c1:
-            st.metric("Score", score_badge(score))
-
-        with c2:
-            st.markdown(f"**{strip_markdown(issue.get('title', 'Untitled issue'))}**")
-            st.caption(summary)
-            st.caption(
-                f"{issue.get('issue_type', 'General')} · "
-                f"{issue.get('ml_area', 'General')} · "
-                f"{issue.get('required_knowledge', 'Python only')} · "
-                f"{competition} competition · "
-                f"{issue.get('comments', 0)} comments"
-            )
-
-        b1, b2 = st.columns(2)
-
-        with b1:
-            label = "Selected" if selected else "Select"
-            if st.button(label, key=f"select_issue_{idx}_{safe_key(issue.get('title', 'issue'))}", use_container_width=True):
-                st.session_state.selected_issue_idx = idx
-                st.rerun()
-
-        with b2:
-            save_label = "Unsave" if saved else "Save"
-            if st.button(save_label, key=f"save_issue_{idx}_{safe_key(issue_key(issue))}", use_container_width=True):
-                toggle_save_issue(issue)
-                st.rerun()
+    b1, b2 = st.columns(2)
+    with b1:
+        label = "Selected" if selected else "Select issue"
+        if st.button(label, key=f"select_issue_{idx}_{safe_key(issue.get('title', 'issue'))}", use_container_width=True):
+            st.session_state.selected_issue_idx = idx
+            st.rerun()
+    with b2:
+        save_label = "Unsave" if saved else "Save"
+        if st.button(save_label, key=f"save_issue_{idx}_{safe_key(issue_key(issue))}", use_container_width=True):
+            toggle_save_issue(issue)
+            st.rerun()
 
 
 def clean_ai_field(value: Any) -> str:
@@ -2227,191 +2955,183 @@ def _default_comment(issue: Dict[str, Any]) -> str:
 
 
 def render_issue_detail(issue: Dict[str, Any]) -> None:
+    """Readable issue coach panel with real card hierarchy."""
     key = issue_key(issue)
-    enriched = get_ai_breakdown(issue)
+    enriched = strengthen_issue_breakdown(get_ai_breakdown(issue))
 
-    score = int(issue.get("fast_score", 0))
+    score = int(issue.get("scout_score") or issue.get("fast_score", 0) or 0)
     labels = unique_clean(enriched.get("labels", []))
-    summary = truncate(clean_ai_field(enriched.get("summary") or enriched.get("body") or enriched.get("title")), 260)
+    summary = truncate(clean_ai_field(enriched.get("summary") or enriched.get("body") or enriched.get("title")), 300)
     competition = enriched.get("competition_level") or enriched.get("competition", "N/A")
     saved = is_issue_saved(issue)
-
     has_ai = key in st.session_state.issue_ai_breakdowns
 
     core_problem = enriched.get("core_problem") or "Generate AI breakdown to extract the actual core problem from the full issue body."
     expected_change = enriched.get("expected_change") or "Generate AI breakdown to understand what the maintainer expects to be changed."
     why_it_matters = enriched.get("why_it_matters") or ""
     what_to_do = enriched.get("what_to_do") or enriched.get("explanation") or "Generate AI breakdown to get a clear step-by-step explanation."
-    likely_files = enriched.get("files_likely_needed") or ["Generate AI breakdown to estimate likely files or project areas."]
+    likely_files = enriched.get("files_likely_needed") or ["Not confidently detected yet."]
     first_step = clean_ai_field(enriched.get("first_step") or "Open the issue on GitHub and read the latest maintainer comments.")
     plan = enriched.get("step_by_step_plan") or []
     risks = enriched.get("risks_or_unknowns") or []
 
-    with st.container(border=True):
-        top_left, top_right = st.columns([0.75, 0.25])
+    title = strip_markdown(enriched.get("title", "Untitled issue"))
+    label_html = "".join(f'<span class="gs-chip">{_h(x)}</span>' for x in labels[:4])
 
-        with top_left:
-            if labels:
-                st.caption(" · ".join(labels[:6]))
-            st.header(strip_markdown(enriched.get("title", "Untitled issue")))
+    st.markdown(
+        f"""
+        <div class="gs-repo-card" style="padding:22px;">
+            <div class="gs-card-top">
+                <div>
+                    <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px;">{label_html}</div>
+                    <h2 style="margin:0; color:var(--ink); font-size:1.55rem; line-height:1.2; letter-spacing:-0.035em;">{_h(title)}</h2>
+                </div>
+                <div style="display:flex; flex-direction:column; align-items:flex-end; gap:6px;">
+                    <span class="gs-chip gs-chip-score">Scout score {_h(score)}/100</span>
+                    <span class="gs-chip">{_h(score_label(score))}</span>
+                </div>
+            </div>
+            <p class="gs-desc" style="font-size:15px;">{_h(summary)}</p>
+            <div class="gs-stats">
+                <span><b>Type</b> · {_h(enriched.get('issue_type', 'General'))}</span>
+                <span><b>Area</b> · {_h(enriched.get('ml_area', 'General'))}</span>
+                <span><b>Comments</b> · {_h(enriched.get('comments', enriched.get('comments_count', 0)))}</span>
+                <span><b>Competition</b> · {_h(competition)}</span>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-        with top_right:
-            st.metric("Scout score", score_badge(score))
-
-        st.write(summary)
-
-        d1, d2, d3, d4 = st.columns(4)
-        d1.metric("Issue type", enriched.get("issue_type", "General"))
-        d2.metric("ML area", enriched.get("ml_area", "General"))
-        d3.metric("Comments", enriched.get("comments", enriched.get("comments_count", 0)))
-        d4.metric("Competition", competition)
-
-        st.divider()
-
-        action_1, action_2 = st.columns(2)
-
-        with action_1:
-            if not has_ai:
-                if st.button("Understand this issue with AI", key=f"generate_ai_{safe_key(key)}", type="primary", use_container_width=True):
-                    email = st.session_state.get("beta_email", "")
-
-                    if not can_use_ai(email):
-                        st.warning("You used your 2 beta AI generations. Please give feedback to unlock more later.")
-                    else:
-                        used = consume_ai_use(
-                            email=email,
-                            action="ai_breakdown",
-                            issue_url=enriched.get("html_url") or enriched.get("url", ""),
-                            repo_name=get_repo_display_name(st.session_state.active_repo_detail or st.session_state.active_repo or {}),
-                        )
-
-                        if used:
-                            generate_ai_breakdown_for_selected()
-                            st.rerun()
-            else:
-                if enriched.get("local_fallback"):
-                    st.info("Local fallback explanation shown. AI quota may be exhausted; try again later for deeper analysis.")
-                else:
-                    st.success("AI breakdown generated.")
-
-        with action_2:
-            save_label = "Unsave issue" if saved else "Save issue"
-            if st.button(save_label, key=f"save_selected_{safe_key(key)}", use_container_width=True):
-                toggle_save_issue(issue)
-                st.rerun()
-
-        st.caption("GitScout uses the issue body as the source of truth. Comments are treated only as extra context.")
-
-        st.markdown("### 🎯 Core problem")
-        render_bullets(as_bullet_points(core_problem, 4))
-
-        st.markdown("### 🛠 Expected change")
-        render_bullets(as_bullet_points(expected_change, 4))
-
-        beginner_warning = clean_ai_field(enriched.get("beginner_warning") or "")
-        if beginner_warning:
-            st.markdown("### ⚠️ Beginner warning")
-            render_bullets(as_bullet_points(beginner_warning, 2))
-
-        if why_it_matters:
-            st.markdown("### 💡 Why it matters")
-            render_bullets(as_bullet_points(why_it_matters, 3))
-
-        st.markdown("### ⚡ What you'll likely do")
-        render_bullets(as_bullet_points(what_to_do, 5))
-
-        st.markdown("### 📁 Files / areas likely involved")
-        render_bullets(as_bullet_points(likely_files, 6))
-
-        if plan:
-            st.markdown("### 🧭 Step-by-step starting plan")
-            for i, step in enumerate(as_bullet_points(plan, 6), start=1):
-                st.write(f"{i}. {step}")
-
-        st.markdown("### 🚀 First step")
-        render_bullets(as_bullet_points(first_step, 2))
-
-        clean_risks = [
-            item for item in as_bullet_points(risks, 5)
-            if "not valid json" not in item.lower()
-            and "api error" not in item.lower()
-            and "quota" not in item.lower()
-            and "rate limit" not in item.lower()
-            and "429" not in item.lower()
-        ]
-        if clean_risks:
-            st.markdown("### ⚠️ Risks / unclear parts")
-            render_bullets(clean_risks)
-
-        if st.button(
-            "Hide original GitHub issue body" if st.session_state.show_original_issue_body else "Show original GitHub issue body",
-            key=f"toggle_body_{safe_key(key)}",
-            use_container_width=True,
-        ):
-            st.session_state.show_original_issue_body = not st.session_state.show_original_issue_body
-            st.rerun()
-
-        if st.session_state.show_original_issue_body:
-            st.text_area(
-                "Original GitHub issue body",
-                value=strip_markdown(enriched.get("body", "No issue body available.")),
-                height=220,
-                disabled=True,
-                key=f"body_area_{safe_key(key)}",
-            )
-
-        st.divider()
-        st.markdown("**📋 Ready-to-copy comment**")
-        st.caption("Uses the same assignment-comment generator as the Comment page. Click generate to make it longer/specific.")
-
-        style_key = f"comment_style_{safe_key(key)}"
-        style = st.selectbox(
-            "Comment style",
-            ["Short and polite", "Beginner-friendly", "Confident technical", "Detailed plan"],
-            key=style_key,
-        )
-
-        comment_lookup_key = f"{key}:{style}"
-        existing_comment = st.session_state.generated_comments.get(comment_lookup_key)
-
-        if existing_comment:
-            comment_text = existing_comment
-        else:
-            comment_text = _default_comment(enriched)
-
-        c1, c2 = st.columns([1, 1])
-        with c1:
-            if st.button("Generate assignment comment", key=f"improve_comment_{safe_key(comment_lookup_key)}", use_container_width=True):
+    action_1, action_2 = st.columns(2)
+    with action_1:
+        if not has_ai:
+            if st.button("Understand this issue with AI", key=f"generate_ai_{safe_key(key)}", type="primary", use_container_width=True):
                 email = st.session_state.get("beta_email", "")
-
                 if not can_use_ai(email):
                     st.warning("You used your 2 beta AI generations. Please give feedback to unlock more later.")
                 else:
                     used = consume_ai_use(
                         email=email,
-                        action="assignment_comment_from_issue_coach",
+                        action="ai_breakdown",
                         issue_url=enriched.get("html_url") or enriched.get("url", ""),
                         repo_name=get_repo_display_name(st.session_state.active_repo_detail or st.session_state.active_repo or {}),
                     )
-
                     if used:
-                        try:
-                            with st.spinner("Writing a better GitHub comment..."):
-                                generated = cached_contribution_comment(enriched, style)
-                            st.session_state.generated_comments[comment_lookup_key] = generated.get("comment", comment_text)
-                            st.rerun()
-                        except Exception as exc:
-                            fallback = _default_comment(enriched)
-                            st.session_state.generated_comments[comment_lookup_key] = fallback
-                            st.warning(f"Comment AI fallback used: {exc}")
-                            st.rerun()
+                        generate_ai_breakdown_for_selected()
+                        st.rerun()
+        else:
+            if enriched.get("local_fallback"):
+                st.info("Showing a local fallback explanation. AI quota may be exhausted; try again later for deeper analysis.")
+            else:
+                st.success("AI breakdown generated.")
 
-        with c2:
-            if st.button("Reset comment", key=f"reset_comment_{safe_key(comment_lookup_key)}", use_container_width=True):
-                st.session_state.generated_comments.pop(comment_lookup_key, None)
-                st.rerun()
+    with action_2:
+        save_label = "Unsave issue" if saved else "Save issue"
+        if st.button(save_label, key=f"save_selected_{safe_key(key)}", use_container_width=True):
+            toggle_save_issue(issue)
+            st.rerun()
 
-        st.code(comment_text, language=None)
+    def section_card(title_text: str, items: Any, max_items: int = 4) -> None:
+        bullets = as_bullet_points(items, max_items)
+        if not bullets:
+            return
+        li = "".join(f"<li>{_h(item)}</li>" for item in bullets)
+        st.markdown(
+            f"""
+            <div class="gs-coach-card">
+                <h4>{_h(title_text)}</h4>
+                <ul>{li}</ul>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    st.markdown('<div class="gs-section-grid">', unsafe_allow_html=True)
+    section_card("Core problem", core_problem, 4)
+    section_card("Expected change", expected_change, 4)
+    if why_it_matters:
+        section_card("Why it matters", why_it_matters, 3)
+    section_card("Suggested approach", what_to_do, 5)
+    section_card("Files likely involved", likely_files, 6)
+    if plan:
+        numbered = [f"{i}. {step}" for i, step in enumerate(as_bullet_points(plan, 6), start=1)]
+        section_card("Step-by-step starting plan", numbered, 6)
+    section_card("First step", first_step, 2)
+    clean_risks = [
+        item for item in as_bullet_points(risks, 5)
+        if "not valid json" not in item.lower()
+        and "api error" not in item.lower()
+        and "quota" not in item.lower()
+        and "rate limit" not in item.lower()
+        and "429" not in item.lower()
+    ]
+    if clean_risks:
+        section_card("Risks or unclear parts", clean_risks, 5)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    st.divider()
+
+    if st.button(
+        "Hide original GitHub issue body" if st.session_state.show_original_issue_body else "Show original GitHub issue body",
+        key=f"toggle_body_{safe_key(key)}",
+        use_container_width=True,
+    ):
+        st.session_state.show_original_issue_body = not st.session_state.show_original_issue_body
+        st.rerun()
+
+    if st.session_state.show_original_issue_body:
+        st.text_area(
+            "Original GitHub issue body",
+            value=strip_markdown(enriched.get("body", "No issue body available.")),
+            height=220,
+            disabled=True,
+            key=f"body_area_{safe_key(key)}",
+        )
+
+    st.markdown("### Ready-to-copy comment")
+    style_key = f"comment_style_{safe_key(key)}"
+    style = st.selectbox(
+        "Comment style",
+        ["Short and polite", "Beginner-friendly", "Confident technical", "Detailed plan"],
+        key=style_key,
+    )
+
+    comment_lookup_key = f"{key}:{style}"
+    existing_comment = st.session_state.generated_comments.get(comment_lookup_key)
+    comment_text = existing_comment if existing_comment else _default_comment(enriched)
+
+    c1, c2 = st.columns([1, 1])
+    with c1:
+        if st.button("Generate assignment comment", key=f"improve_comment_{safe_key(comment_lookup_key)}", type="primary", use_container_width=True):
+            email = st.session_state.get("beta_email", "")
+            if not can_use_ai(email):
+                st.warning("You used your 2 beta AI generations. Please give feedback to unlock more later.")
+            else:
+                used = consume_ai_use(
+                    email=email,
+                    action="assignment_comment_from_issue_coach",
+                    issue_url=enriched.get("html_url") or enriched.get("url", ""),
+                    repo_name=get_repo_display_name(st.session_state.active_repo_detail or st.session_state.active_repo or {}),
+                )
+                if used:
+                    try:
+                        with st.spinner("Writing a better GitHub comment..."):
+                            generated = cached_contribution_comment(enriched, style)
+                        st.session_state.generated_comments[comment_lookup_key] = generated.get("comment", comment_text)
+                        st.rerun()
+                    except Exception as exc:
+                        fallback = _default_comment(enriched)
+                        st.session_state.generated_comments[comment_lookup_key] = fallback
+                        st.warning(f"Comment AI fallback used: {exc}")
+                        st.rerun()
+
+    with c2:
+        if st.button("Reset comment", key=f"reset_comment_{safe_key(comment_lookup_key)}", use_container_width=True):
+            st.session_state.generated_comments.pop(comment_lookup_key, None)
+            st.rerun()
+
+    st.code(comment_text, language=None)
 
     st.link_button("Open issue on GitHub ↗", enriched.get("url", "#"), use_container_width=True)
 
@@ -2457,7 +3177,7 @@ def generate_comment_from_issue_url() -> None:
 def render_issue_url_comment_box() -> None:
     with st.container(border=True):
         st.subheader("Comment Generator")
-        st.caption("Paste a GitHub issue URL. GitScout writes a paste-ready comment asking to work on the issue and get assigned.")
+        st.write("Paste a GitHub issue URL and generate a clear assignment comment you can review before posting.")
         c1, c2 = st.columns([3, 1])
         with c1:
             st.text_input("GitHub issue URL", key="issue_url_input", placeholder="https://github.com/owner/repo/issues/123")
@@ -2479,7 +3199,7 @@ def render_issue_url_comment_box() -> None:
                     generate_comment_from_issue_url()
                     st.rerun()
         if st.session_state.issue_url_generated_comment:
-            st.markdown("**Ready-to-copy comment**")
+            st.markdown("### Ready-to-copy comment")
             st.code(st.session_state.issue_url_generated_comment, language=None)
 
 
@@ -2523,7 +3243,7 @@ def issues_page() -> None:
         st.info("Click **Find beginner issues** to rank open issues. Then select one and use **Understand this issue with AI**.")
         return
 
-    left_col, right_col = st.columns([0.9, 1.1])
+    left_col, right_col = st.columns([1.02, 1.18])
 
     with left_col:
         st.subheader("Ranked issues")
@@ -2586,6 +3306,113 @@ def saved_page() -> None:
 # ─────────────────────────────────────────────────────────────
 # APP
 # ─────────────────────────────────────────────────────────────
+def _save_feedback_from_ui(rating: int, confused: str, improve: str, would_use_again: str) -> bool:
+    email = st.session_state.get("beta_email", "")
+    name = st.session_state.get("beta_name", "")
+    payload = {
+        "email": email,
+        "name": name,
+        "rating": int(rating),
+        "confused": confused,
+        "improve": improve,
+        "would_use_again": would_use_again,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    try:
+        try:
+            from src.beta_access import get_supabase
+        except Exception:
+            from beta_access import get_supabase
+        supabase = get_supabase()
+        supabase.table("beta_feedback").insert(payload).execute()
+        return True
+    except Exception as exc:
+        st.session_state["feedback_save_error"] = str(exc)
+        return False
+
+
+def _feedback_modal_inner() -> None:
+    top_l, top_r = st.columns([7, 1])
+    with top_l:
+        st.markdown('<span class="gs-feedback-kicker">Beta feedback</span>', unsafe_allow_html=True)
+        st.markdown('<div class="gs-feedback-title">Help improve GitScout</div>', unsafe_allow_html=True)
+        st.markdown('<p class="gs-feedback-copy">You used your free AI generations. Tell me what felt useful, confusing, or missing.</p>', unsafe_allow_html=True)
+    with top_r:
+        if st.button("×", key="feedback_modal_close_x", use_container_width=True):
+            st.session_state.feedback_modal_closed = True
+            st.rerun()
+
+    st.markdown('<div class="gs-star-help">How useful was GitScout?</div>', unsafe_allow_html=True)
+    rating_cols = st.columns(5)
+    current = int(st.session_state.get("feedback_star_rating", 4) or 4)
+    for i, col in enumerate(rating_cols, start=1):
+        with col:
+            star = "★" if i <= current else "☆"
+            if st.button(star, key=f"feedback_star_{i}", use_container_width=True):
+                st.session_state.feedback_star_rating = i
+                st.rerun()
+
+    confused = st.text_area(
+        "What confused you?",
+        key="feedback_confused_text_modal",
+        placeholder="Example: issue explanation, repo matching, filters...",
+        height=95,
+    )
+    improve = st.text_area(
+        "What should I improve first?",
+        key="feedback_improve_text_modal",
+        placeholder="Tell me the one thing that would make this more useful.",
+        height=95,
+    )
+    would_use = st.radio(
+        "Would you use this again?",
+        ["Yes", "Maybe", "Not sure yet", "No"],
+        key="feedback_would_use_choice_modal",
+        horizontal=True,
+    )
+
+    c1, c2 = st.columns([2, 1])
+    with c1:
+        if st.button("Submit feedback", key="feedback_submit_modal", type="primary", use_container_width=True):
+            saved = _save_feedback_from_ui(
+                st.session_state.get("feedback_star_rating", 4),
+                confused,
+                improve,
+                would_use,
+            )
+            st.session_state.feedback_submitted = True
+            st.session_state.feedback_modal_closed = True
+            st.toast("Feedback submitted. Thank you!" if saved else "Feedback saved for this session.")
+            st.rerun()
+    with c2:
+        if st.button("Maybe later", key="feedback_maybe_later_modal", use_container_width=True):
+            st.session_state.feedback_modal_closed = True
+            st.rerun()
+
+
+def render_feedback_modal() -> None:
+    email = st.session_state.get("beta_email", "")
+    if not email:
+        return
+    if st.session_state.get("feedback_submitted") or st.session_state.get("feedback_modal_closed"):
+        return
+    try:
+        exhausted = not can_use_ai(email)
+    except Exception:
+        exhausted = False
+    if not exhausted:
+        return
+
+    if hasattr(st, "dialog"):
+        @st.dialog("Quick feedback")
+        def _dialog():
+            _feedback_modal_inner()
+        _dialog()
+    else:
+        with st.container(border=True):
+            _feedback_modal_inner()
+
+
 def create_app() -> None:
     configure_page()
     init_session_state()
@@ -2594,7 +3421,8 @@ def create_app() -> None:
     if not render_beta_gate():
         return
 
-    render_usage_status()
+    # Do not call the old inline feedback/status form here. The new feedback
+    # flow is a modal that appears only after the beta AI limit is exhausted.
     render_nav()
 
     page = st.session_state.page
@@ -2612,4 +3440,4 @@ def create_app() -> None:
     else:
         discover_page()
 
-    render_feedback_form()
+    render_feedback_modal()
